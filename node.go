@@ -67,18 +67,19 @@ type peerInfo struct {
 }
 
 type Node struct {
-	cfg      Config
-	host     host.Host
-	dht      *dht.IpfsDHT
-	topic    *pubsub.Topic
-	ledger   *Ledger
-	receipts *Receipts
-	claims   *Claims
-	claimTop *pubsub.Topic
-	nodeKey  crypto.PrivKey
-	relays   []peer.AddrInfo // bootstrap nodes, which also relay
-	http     *http.Client
-	inflight atomic.Int32
+	cfg         Config
+	host        host.Host
+	dht         *dht.IpfsDHT
+	topic       *pubsub.Topic
+	ledger      *Ledger
+	receipts    *Receipts
+	claims      *Claims
+	claimTop    *pubsub.Topic
+	nodeKey     crypto.PrivKey
+	receiptSeed []byte
+	relays      []peer.AddrInfo // bootstrap nodes, which also relay
+	http        *http.Client
+	inflight    atomic.Int32
 
 	mu    sync.Mutex
 	peers map[peer.ID]*peerInfo
@@ -187,6 +188,9 @@ func NewNode(ctx context.Context, cfg Config) (*Node, error) {
 	}
 
 	n.nodeKey = key
+	if n.receiptSeed, err = loadSeed(filepath.Join(cfg.DataDir, "receipt.seed")); err != nil {
+		return nil, err
+	}
 	n.claims = OpenClaims(filepath.Join(cfg.DataDir, "claims.json"))
 	if n.receipts, err = OpenReceipts(filepath.Join(cfg.DataDir, "receipts.jsonl"), key, n.host.ID()); err != nil {
 		return nil, err
