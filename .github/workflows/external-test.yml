@@ -34,5 +34,15 @@ jobs:
           curl -s localhost:7778/status | python3 -c 'import json,sys; [print(c["addr"], "relayed" if c["relayed"] else "direct") for c in json.load(sys.stdin)["conns"]]'
           curl -s localhost:7778/credits; echo
           grep -q "^HTTP/1.1 200" headers.txt
+          # Four newcomers at once: all must be served.
+          for i in 1 2 3 4; do
+            curl -s -o "c$i.json" -w "concurrent $i: %{http_code} %{time_total}s\n" localhost:7778/v1/chat/completions \
+              -d "{\"model\":\"$MODEL\",\"max_tokens\":40,\"messages\":[{\"role\":\"user\",\"content\":\"Count to five.\"}]}" > "s$i.txt" &
+          done
+          wait
+          cat s1.txt s2.txt s3.txt s4.txt
+          ! grep -v ": 200 " s1.txt s2.txt s3.txt s4.txt
+          # What a newcomer sees for a model nobody serves.
+          curl -s localhost:7778/v1/chat/completions -d '{"model":"no-such-model","messages":[]}'; echo
       - if: always()
         run: cat node.log
