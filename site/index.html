@@ -94,6 +94,10 @@ p { margin: 0 0 14px; max-width: 64ch; }
 .copy { position: absolute; top: 7px; right: 7px; font: 500 12px/1 var(--body); padding: 6px 9px; cursor: pointer;
   background: var(--sheet); color: var(--sub); border: 1px solid var(--rule); }
 .copy:hover { color: var(--ink); border-color: var(--ink); }
+.os-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.os-tabs button { font: 500 13px/1 var(--body); padding: 8px 11px; cursor: pointer; background: transparent;
+  color: var(--sub); border: 1px solid var(--rule); }
+.os-tabs button.on { color: var(--ink); border-color: var(--ink); }
 
 /* path diagram */
 .path { display: grid; grid-template-columns: auto 1fr auto 1fr auto; align-items: center; gap: 0; margin: 8px 0 26px; }
@@ -174,15 +178,14 @@ footer code { font: 12px var(--mono); }
     <div class="term" aria-label="What starting a node looks like">
       <div class="bar"><i></i><i></i><i></i></div>
 <pre><span class="p">$ </span><span class="c">./bitllm --upstream http://localhost:8000/v1 \
-    --model ds=deepseek-v4.1-flash-1017</span>
-<span class="s">bitllm v0.1.5, peer id 12D3KooWFrM6…YC3w7RWE</span>
-<span class="s">synced 10 receipts from boot.bitllm.org</span>
-<span class="o">sharing</span> deepseek-v4.1-flash-1017 from :8000
+    --model ds=deepseek-v4.1-flash-1017-heretic</span>
+<span class="s">bitllm v0.1.7, peer id 12D3KooWFrM6…YC3w7RWE</span>
+<span class="s">synced receipts from boot.bitllm.org</span>
+<span class="o">sharing</span> deepseek-v4.1-flash-1017-heretic from :8000
 <span class="g">gateway</span> http://127.0.0.1:7778/v1
 
 <span class="p">$ </span><span class="c">curl localhost:7778/v1/models</span>
-{"data":[{"id":"deepseek-v4.1-flash-1017","nodes":3},
-         {"id":"deepseek-v4.1-flash-1017-heretic","nodes":2}]}</pre>
+{"data":[{"id":"deepseek-v4.1-flash-1017-heretic","nodes":1}]}</pre>
     </div>
   </div>
 
@@ -190,22 +193,29 @@ footer code { font: 12px var(--mono); }
     <div class="sec">
       <h2>Get started</h2>
       <div>
+        <div class="os-tabs" role="tablist" aria-label="Your system">
+          <button type="button" data-os="mac">macOS (Apple silicon)</button>
+          <button type="button" data-os="linux">Linux x86-64</button>
+          <button type="button" data-os="linuxarm">Linux arm64</button>
+          <button type="button" data-os="win">Windows</button>
+        </div>
         <div class="ways">
           <div class="way use">
             <div class="k"><i></i>Use the network</div>
             <h3>Point your agent at localhost</h3>
-            <p>Run the binary with no flags. It joins the network and opens an OpenAI and Anthropic
-              compatible endpoint on your machine. Claude Code, Cline, Aider, OpenCode and anything
-              that takes a base URL work unchanged.</p>
-            <div class="code"><button class="copy" type="button">Copy</button>./bitllm
-export OPENAI_BASE_URL=http://127.0.0.1:7778/v1</div>
+            <p>Download and run it with no flags. It joins the network and opens an OpenAI and
+              Anthropic compatible endpoint on your machine. Then open
+              <a href="http://127.0.0.1:7778">http://127.0.0.1:7778</a>: pick a model, copy the setup
+              for your agent (Claude Code, Cline, Aider, OpenCode...) and send a test message.</p>
+            <div class="code"><button class="copy" type="button">Copy</button><span class="dl-cmd"></span></div>
           </div>
           <div class="way share">
             <div class="k"><i></i>Share your model</div>
             <h3>Already running vLLM or llama.cpp?</h3>
-            <p>Point BitLLM at your server and map its model to a network name. Peers reach you through
-              hole punching or a relay. You choose how many requests to serve at once.</p>
-            <div class="code"><button class="copy" type="button">Copy</button>./bitllm --upstream http://localhost:8000/v1 \
+            <p>After the download, point BitLLM at your server and map its model to a network name.
+              Peers reach you through hole punching or a relay. You choose how many requests to serve
+              at once.</p>
+            <div class="code"><button class="copy" type="button">Copy</button><span class="run"></span> --upstream http://localhost:8000/v1 \
   --model your-name=deepseek-v4.1-flash-1017 \
   --concurrency 2</div>
           </div>
@@ -288,6 +298,21 @@ export OPENAI_BASE_URL=http://127.0.0.1:7778/v1</div>
 </div>
 
 <script>
+const REL = "https://github.com/zengjiajun0623/bitllm/releases/latest/download/";
+const OS = {
+  mac: { dl: `curl -fL -o bitllm ${REL}bitllm-darwin-arm64 && chmod +x bitllm && ./bitllm`, run: "./bitllm" },
+  linux: { dl: `curl -fL -o bitllm ${REL}bitllm-linux-amd64 && chmod +x bitllm && ./bitllm`, run: "./bitllm" },
+  linuxarm: { dl: `curl -fL -o bitllm ${REL}bitllm-linux-arm64 && chmod +x bitllm && ./bitllm`, run: "./bitllm" },
+  win: { dl: `iwr -OutFile bitllm.exe ${REL}bitllm-windows-amd64.exe; .\\bitllm.exe`, run: ".\\bitllm.exe" },
+};
+function pickOS(k) {
+  document.querySelectorAll(".os-tabs button").forEach(b => b.classList.toggle("on", b.dataset.os === k));
+  document.querySelectorAll(".dl-cmd").forEach(e => e.textContent = OS[k].dl);
+  document.querySelectorAll(".run").forEach(e => e.textContent = OS[k].run);
+}
+document.querySelectorAll(".os-tabs button").forEach(b => b.addEventListener("click", () => pickOS(b.dataset.os)));
+const ua = navigator.userAgent;
+pickOS(/Windows/.test(ua) ? "win" : /Mac/.test(ua) ? "mac" : /aarch64|arm64/i.test(ua) ? "linuxarm" : "linux");
 document.querySelectorAll(".copy").forEach(b => b.addEventListener("click", () => {
   const box = b.parentElement, text = box.textContent.replace(b.textContent, "").trim();
   const done = () => { b.textContent = "Copied"; setTimeout(() => b.textContent = "Copy", 1400); };
