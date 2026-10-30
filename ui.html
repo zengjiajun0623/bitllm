@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BitLLM</title>
+<style>
+:root {
+  --bg: #0b0c0e; --panel: #131519; --line: #23262d; --text: #e6e7ea; --muted: #8a8f99;
+  --green: #4ade80; --orange: #f97316; --red: #f87171;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f6f6f4; --panel: #ffffff; --line: #e3e3df; --text: #17181a; --muted: #6b6f76;
+    --green: #16a34a; --orange: #ea580c;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
+.wrap { max-width: 1080px; margin: 0 auto; padding: 20px 16px 48px; }
+header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+.mark { width: 22px; height: 22px; display: grid; grid-template-columns: 1fr 1fr; gap: 3px; }
+.mark i { display: block; background: var(--text); border-radius: 2px; }
+.mark i:nth-child(1) { background: var(--green); }
+.mark i:nth-child(4) { background: var(--orange); }
+h1 { font-size: 18px; margin: 0; letter-spacing: .2px; }
+.tag { color: var(--muted); font-size: 13px; }
+.id { margin-left: auto; font-family: var(--mono); font-size: 12px; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; cursor: pointer;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+.stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; min-width: 0; }
+.stat b { display: block; font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stat span { color: var(--muted); font-size: 12px; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-right: 6px; vertical-align: 1px; }
+.dot.on { background: var(--green); }
+.grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; align-items: start; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; min-width: 0; }
+.panel + .panel { margin-top: 16px; }
+.panel h2 { font-size: 13px; font-weight: 600; margin: 0 0 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; table-layout: fixed; }
+td, th { text-align: left; padding: 7px 4px; border-top: 1px solid var(--line); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+th { color: var(--muted); font-weight: 500; font-size: 12px; border-top: 0; }
+td.n, th.n { text-align: right; width: 76px; }
+.me { color: var(--green); }
+.mono { font-family: var(--mono); font-size: 12px; }
+.empty { color: var(--muted); padding: 8px 4px; }
+.chat-controls { display: flex; gap: 8px; margin-bottom: 10px; }
+select, textarea, button { font: inherit; color: var(--text); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+select { flex: 1; min-width: 0; }
+textarea { width: 100%; resize: vertical; min-height: 64px; display: block; }
+button { cursor: pointer; border-color: var(--green); color: var(--green); background: transparent; white-space: nowrap; }
+button:disabled { opacity: .5; cursor: default; }
+.log { max-height: 420px; overflow-y: auto; margin-bottom: 10px; }
+.msg { padding: 8px 0; border-top: 1px solid var(--line); white-space: pre-wrap; word-wrap: break-word; }
+.msg:first-child { border-top: 0; }
+.msg .who { font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+.msg.user .who { color: var(--orange); }
+.msg .think { color: var(--muted); font-size: 12px; border-left: 2px solid var(--line); padding-left: 8px; margin-bottom: 6px; }
+.msg .err { color: var(--red); }
+.send { display: flex; gap: 8px; align-items: flex-end; margin-top: 8px; }
+.send textarea { flex: 1; }
+.hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
+code { font-family: var(--mono); font-size: 12px; }
+@media (max-width: 760px) {
+  .stats { grid-template-columns: repeat(2, 1fr); }
+  .grid { grid-template-columns: 1fr; }
+  .id { margin-left: 0; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="mark"><i></i><i></i><i></i><i></i></div>
+    <h1>BitLLM</h1>
+    <span class="tag">BitTorrent for local LLMs</span>
+    <span class="id" id="peerid" title="your peer id, click to copy">connecting…</span>
+  </header>
+
+  <div class="stats">
+    <div class="stat"><b id="s-net"><span class="dot"></span>…</b><span id="s-net-sub">network</span></div>
+    <div class="stat"><b id="s-models">0</b><span>models online</span></div>
+    <div class="stat"><b id="s-serving">0</b><span>models you share</span></div>
+    <div class="stat"><b id="s-credits" class="me">0</b><span>your credits</span></div>
+  </div>
+
+  <div class="grid">
+    <div>
+      <div class="panel">
+        <h2>Try a model</h2>
+        <div class="log" id="log"></div>
+        <div class="chat-controls"><select id="model"></select><button id="clear" type="button">Clear</button></div>
+        <div class="send">
+          <textarea id="prompt" placeholder="Ask something. Enter to send, Shift+Enter for a new line."></textarea>
+          <button id="go" type="button">Send</button>
+        </div>
+        <div class="hint">Your prompt goes to the peer that serves the model. It can read it, so don't send secrets.
+          Agents can use the same endpoint: <code>OPENAI_BASE_URL=<span id="base"></span></code></div>
+      </div>
+    </div>
+    <div>
+      <div class="panel">
+        <h2>Models on the network</h2>
+        <table><thead><tr><th>model</th><th class="n">nodes</th></tr></thead><tbody id="models"></tbody></table>
+      </div>
+      <div class="panel">
+        <h2>Credits for serving</h2>
+        <table><thead><tr><th>peer</th><th class="n">jobs</th><th class="n">credits</th></tr></thead><tbody id="credits"></tbody></table>
+        <div class="hint">From signed receipts gossiped across the network. Every node computes the same table.</div>
+      </div>
+      <div class="panel" id="share" hidden>
+        <h2>Share your model, earn credits</h2>
+        <div class="hint" style="margin-top:0">Run your OpenAI-compatible server (vLLM, SGLang, llama.cpp, Ollama...), then restart BitLLM with it:</div>
+        <pre class="mono" style="white-space:pre-wrap;margin:8px 0 0">bitllm --upstream http://localhost:8000/v1 \
+  --model your-name=deepseek-v4.1-flash-1017</pre>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const short = id => id ? id.slice(0, 8) + "…" + id.slice(-6) : "";
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let me = "", history = [];
+$("base").textContent = location.origin + "/v1";
+
+async function refresh() {
+  try {
+    const [st, models, credits] = await Promise.all([
+      fetch("/status").then(r => r.json()),
+      fetch("/v1/models").then(r => r.json()),
+      fetch("/credits").then(r => r.json()),
+    ]);
+    me = st.id;
+    $("peerid").textContent = short(me);
+    const peers = new Set(st.conns.map(c => c.peer)).size;
+    $("s-net").innerHTML = `<span class="dot ${peers ? "on" : ""}"></span>${peers} peer${peers === 1 ? "" : "s"}`;
+    $("s-models").textContent = models.data.length;
+    $("s-serving").textContent = st.serving.length;
+    const mine = credits.find(c => c.server === me);
+    $("s-credits").textContent = (mine ? mine.credits : 0).toLocaleString();
+
+    $("models").innerHTML = models.data.length ? models.data.map(m =>
+      `<tr><td class="${st.serving.includes(m.id) ? "me" : ""}" title="${esc(m.id)}">${esc(m.id)}</td><td class="n">${m.nodes}</td></tr>`).join("")
+      : `<tr><td class="empty" colspan="2">No models yet. Waiting for peers…</td></tr>`;
+    const sel = $("model"), cur = sel.value;
+    sel.innerHTML = models.data.map(m => `<option>${esc(m.id)}</option>`).join("");
+    if (models.data.some(m => m.id === cur)) sel.value = cur;
+
+    $("credits").innerHTML = credits.length ? credits.map(c =>
+      `<tr><td class="mono ${c.server === me ? "me" : ""}" title="${c.server}">${c.server === me ? "you" : short(c.server)}</td><td class="n">${c.jobs}</td><td class="n">${c.credits.toLocaleString()}</td></tr>`).join("")
+      : `<tr><td class="empty" colspan="3">No receipts yet.</td></tr>`;
+
+    const byPeer = {};
+    for (const c of st.conns) (byPeer[c.peer] ||= []).push(c);
+    const relayed = Object.values(byPeer).filter(cs => !cs.some(c => !c.relayed)).length;
+    $("s-net-sub").textContent = relayed ? `network · ${relayed} via relay` : "network";
+    $("share").hidden = st.serving.length > 0;
+  } catch (e) {
+    $("s-net").innerHTML = `<span class="dot"></span>offline`;
+  }
+}
+
+function addMsg(cls, who) {
+  const d = document.createElement("div");
+  d.className = "msg " + cls;
+  d.innerHTML = `<div class="who">${who}</div><div class="think" hidden></div><div class="body"></div>`;
+  $("log").appendChild(d);
+  return d;
+}
+
+async function send() {
+  const text = $("prompt").value.trim(), model = $("model").value;
+  if (!text || !model) return;
+  $("prompt").value = "";
+  $("go").disabled = true;
+  addMsg("user", "you").querySelector(".body").textContent = text;
+  history.push({ role: "user", content: text });
+  const out = addMsg("bot", esc(model));
+  const body = out.querySelector(".body"), think = out.querySelector(".think");
+  let answer = "";
+  try {
+    const r = await fetch("/v1/chat/completions", { method: "POST",
+      body: JSON.stringify({ model, stream: true, messages: history }) });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      throw new Error((j.error && j.error.message) || r.statusText);
+    }
+    const peer = r.headers.get("X-Bitllm-Peer");
+    out.querySelector(".who").textContent = `${model} · ${peer ? "peer " + short(peer) : "your own server"}`;
+    const reader = r.body.getReader(), dec = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+        if (!line.startsWith("data:") || line.includes("[DONE]")) continue;
+        try {
+          for (const c of JSON.parse(line.slice(5)).choices || []) {
+            const d = c.delta || {};
+            const r2 = d.reasoning || d.reasoning_content;
+            if (r2) { think.hidden = false; think.textContent += r2; }
+            if (d.content) { answer += d.content; body.textContent = answer; }
+          }
+        } catch {}
+        $("log").scrollTop = $("log").scrollHeight;
+      }
+    }
+    history.push({ role: "assistant", content: answer });
+  } catch (e) {
+    body.innerHTML = `<span class="err">${esc(e.message)}</span>`;
+    history.pop();
+  }
+  $("go").disabled = false;
+  refresh();
+}
+
+$("go").onclick = send;
+$("prompt").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } });
+$("clear").onclick = () => { history = []; $("log").innerHTML = ""; };
+$("peerid").onclick = () => navigator.clipboard && navigator.clipboard.writeText(me);
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

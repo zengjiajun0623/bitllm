@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"io"
@@ -10,6 +11,9 @@ import (
 	"strings"
 	"time"
 )
+
+//go:embed ui.html
+var uiHTML []byte
 
 // busyWait is how long a request queues when every peer serving its model is busy.
 var busyWait = 60 * time.Second
@@ -21,6 +25,10 @@ func (n *Node) Gateway() http.Handler {
 	mux.HandleFunc("GET /v1/models", n.listModels)
 	mux.HandleFunc("POST /v1/chat/completions", n.complete("/chat/completions"))
 	mux.HandleFunc("POST /v1/completions", n.complete("/completions"))
+	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(uiHTML)
+	})
 	mux.HandleFunc("GET /status", n.status)
 	mux.HandleFunc("GET /credits", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(n.creditsTable())
