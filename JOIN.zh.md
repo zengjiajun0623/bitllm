@@ -66,4 +66,4 @@ curl localhost:7778/credits
 - 目前还没有防作弊验证，节点理论上可以用别的模型冒充。
 - 身份和账本存在 `~/.bitllm/`，换机器想保留积分就把整个目录带走。
 
-有问题直接找the maintainer。
+有问题在群里问，或者在 GitHub 提 issue。
