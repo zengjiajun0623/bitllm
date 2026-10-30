@@ -122,6 +122,38 @@ func TestNetwork(t *testing.T) {
 		t.Fatalf("server sees client balance %d, want -40", b)
 	}
 
+	// Both jobs produced countersigned receipts, gossiped to every node.
+	srvID := server.host.ID().String()
+	waitCredits := func(n *Node, who string) {
+		t.Helper()
+		for deadline := time.Now().Add(10 * time.Second); ; {
+			if c := n.receipts.Tally()[srvID]; c.Credits == 40 && c.Jobs == 2 && c.Clients == 1 {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("%s tally: %+v", who, n.receipts.Tally())
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+	waitCredits(client, "client")
+	waitCredits(boot, "bootstrap")
+	waitCredits(server, "server")
+
+	// A node that joins later catches up from the bootstrap node.
+	late := testNode(t, ctx, Config{Bootstrap: bs})
+	waitCredits(late, "late joiner")
+
+	// Tampering with a receipt breaks its signatures.
+	sr := late.receipts.all[0]
+	if !sr.Valid() {
+		t.Fatal("stored receipt invalid")
+	}
+	sr.Receipt.Credits *= 10
+	if sr.Valid() {
+		t.Fatal("inflated receipt still valid")
+	}
+
 	// The client is now 40 in debt, past the server's 30 free credits.
 	w = post(client, `{"model":"deepseek-v4.1-flash","messages":[]}`)
 	if w.Code != 402 {
@@ -200,7 +232,7 @@ func TestBusyQueues(t *testing.T) {
 	defer slow.Close()
 	boot := testNode(t, ctx, Config{})
 	bs := boot.Addrs()[:1]
-	testNode(t, ctx, Config{Bootstrap: bs, Upstream: slow.URL + "/v1", Concurrency: 1, FreeCredits: 1000})
+	server := testNode(t, ctx, Config{Bootstrap: bs, Upstream: slow.URL + "/v1", Concurrency: 1, FreeCredits: 1000})
 	client := testNode(t, ctx, Config{Bootstrap: bs})
 	for deadline := time.Now().Add(20 * time.Second); len(client.candidates("m")) == 0; {
 		if time.Now().After(deadline) {
@@ -216,5 +248,11 @@ func TestBusyQueues(t *testing.T) {
 		if c := <-codes; c != 200 {
 			t.Fatalf("got %d, want every request served in turn", c)
 		}
+	}
+	for deadline := time.Now().Add(10 * time.Second); server.receipts.Tally()[server.host.ID().String()].Jobs != 3; {
+		if time.Now().After(deadline) {
+			t.Fatalf("receipts: %+v", server.receipts.Tally())
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }

@@ -4,9 +4,14 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"hash"
 	"io"
+	"log"
 	"net/http"
 
 	"github.com/libp2p/go-libp2p/core/network"
@@ -22,6 +27,7 @@ const InferProto = "/llmpool/infer/1.0.0"
 const maxRequest = 64 << 20
 
 type inferReq struct {
+	Job  string          `json:"job"` // client-chosen id, named in the receipt
 	Path string          `json:"path"`
 	Body json.RawMessage `json:"body"`
 }
@@ -45,6 +51,21 @@ type meter struct {
 	prompt, completion int64
 	chars              int64
 	reported           bool
+	out                hash.Hash // sha256 of the exact response bytes, for the receipt
+}
+
+func (m *meter) raw(b []byte) {
+	if m.out == nil {
+		m.out = sha256.New()
+	}
+	m.out.Write(b)
+}
+
+func (m *meter) sum() string {
+	if m.out == nil {
+		m.out = sha256.New()
+	}
+	return hex.EncodeToString(m.out.Sum(nil))
 }
 
 func (m *meter) usage(u *struct {
@@ -106,6 +127,7 @@ func pipe(dst io.Writer, flush func(), src io.Reader, stream bool, m *meter) err
 			return err
 		}
 		m.body(b)
+		m.raw(b)
 		_, err = dst.Write(b)
 		return err
 	}
@@ -114,6 +136,7 @@ func pipe(dst io.Writer, flush func(), src io.Reader, stream bool, m *meter) err
 		line, err := r.ReadBytes('\n')
 		if len(line) > 0 {
 			m.sseLine(line)
+			m.raw(line)
 			if _, werr := dst.Write(line); werr != nil {
 				return werr
 			}
@@ -205,6 +228,11 @@ func (n *Node) handleInfer(s network.Stream) {
 	var m meter
 	pipe(s, nil, resp.Body, stream, &m)
 	n.ledger.Served(remote, m.credits())
+	if req.Job != "" {
+		var model struct{ Model string }
+		json.Unmarshal(req.Body, &model)
+		n.receipts.served(req.Job, remote, model.Model, m)
+	}
 }
 
 // infer runs a request on peer p and writes the response to w. started reports
@@ -220,7 +248,8 @@ func (n *Node) infer(ctx context.Context, p peer.ID, path string, body []byte, s
 	stop := context.AfterFunc(ctx, func() { s.Reset() })
 	defer stop()
 
-	b, _ := json.Marshal(inferReq{path, body})
+	job := rand.Text()
+	b, _ := json.Marshal(inferReq{job, path, body})
 	if _, err := s.Write(append(b, '\n')); err != nil {
 		return false, err
 	}
@@ -240,6 +269,15 @@ func (n *Node) infer(ctx context.Context, p peer.ID, path string, body []byte, s
 	var m meter
 	err = pipe(w, writeHead(w, stream, p), r, stream, &m)
 	n.ledger.Received(p, m.credits())
+	if err == nil {
+		var model struct{ Model string }
+		json.Unmarshal(body, &model)
+		go func() {
+			if err := n.sendReceipt(p, job, model.Model, m); err != nil {
+				log.Printf("receipt to %s: %v", p, err)
+			}
+		}()
+	}
 	return true, err
 }
 

@@ -22,6 +22,9 @@ func (n *Node) Gateway() http.Handler {
 	mux.HandleFunc("POST /v1/chat/completions", n.complete("/chat/completions"))
 	mux.HandleFunc("POST /v1/completions", n.complete("/completions"))
 	mux.HandleFunc("GET /status", n.status)
+	mux.HandleFunc("GET /credits", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(n.creditsTable())
+	})
 	return mux
 }
 

@@ -69,6 +69,7 @@ type Node struct {
 	dht      *dht.IpfsDHT
 	topic    *pubsub.Topic
 	ledger   *Ledger
+	receipts *Receipts
 	relays   []peer.AddrInfo // bootstrap nodes, which also relay
 	http     *http.Client
 	inflight atomic.Int32
@@ -166,10 +167,28 @@ func NewNode(ctx context.Context, cfg Config) (*Node, error) {
 		n.host.SetStreamHandler(InferProto, n.handleInfer)
 	}
 
+	if n.receipts, err = OpenReceipts(filepath.Join(cfg.DataDir, "receipts.jsonl"), key, n.host.ID()); err != nil {
+		return nil, err
+	}
+	n.host.SetStreamHandler(ReceiptProto, n.handleReceipt)
+	n.host.SetStreamHandler(SyncProto, n.handleSync)
+
 	ps, err := pubsub.NewGossipSub(ctx, n.host)
 	if err != nil {
 		return nil, err
 	}
+	ps.RegisterTopicValidator(ReceiptTopic, func(_ context.Context, _ peer.ID, msg *pubsub.Message) bool {
+		var sr SignedReceipt
+		return json.Unmarshal(msg.Data, &sr) == nil && sr.Valid()
+	})
+	if n.receipts.topic, err = ps.Join(ReceiptTopic); err != nil {
+		return nil, err
+	}
+	rsub, err := n.receipts.topic.Subscribe()
+	if err != nil {
+		return nil, err
+	}
+	go n.readReceipts(ctx, rsub)
 	if n.topic, err = ps.Join(AnnounceTopic); err != nil {
 		return nil, err
 	}
@@ -182,6 +201,12 @@ func NewNode(ctx context.Context, cfg Config) (*Node, error) {
 	for _, ai := range bootstrap {
 		if err := n.host.Connect(ctx, ai); err != nil {
 			log.Printf("bootstrap %s: %v", ai.ID, err)
+			continue
+		}
+		if added, err := n.syncReceipts(ctx, ai.ID); err != nil {
+			log.Printf("receipt sync from %s: %v", ai.ID, err)
+		} else if added > 0 {
+			log.Printf("synced %d receipts from %s", added, ai.ID)
 		}
 	}
 	if err := n.dht.Bootstrap(ctx); err != nil {

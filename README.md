@@ -47,12 +47,25 @@ Point any agent at it: `OPENAI_BASE_URL=http://127.0.0.1:7778/v1`, any API key. 
 a model yourself, your gateway answers it from your own server (free, never leaves your machine).
 The response header `X-Llmpool-Peer` says which peer answered.
 
-## Credits
+## Credits for serving
 
-Each node keeps its own ledger of work exchanged with each peer (`~/.llmpool/ledger.json`):
-credits = prompt tokens / 4 + completion tokens. A peer may take up to `--free-credits` (50,000)
-more than it has given before your node stops serving it, so newcomers can try the network and
-people who share get served. There is no global ledger and no token.
+Every job you serve earns credits (prompt tokens / 4 + completion tokens), proven by a receipt:
+the client signs what it received (model, token counts, SHA-256 of the exact response bytes),
+your node checks it against what it sent and countersigns, and the receipt is gossiped to the
+whole network. Any node can verify both signatures and recompute everyone's credits:
+
+```bash
+curl localhost:7778/credits      # credits per serving peer, from every receipt this node has seen
+```
+
+Receipts are stored in `~/.llmpool/receipts.jsonl`; a new node catches up from its bootstrap
+peers. What credits will be worth is not decided yet. Which receipts count will be published
+before it is: serving yourself through fake clients or serving a model other than the one named
+will not count.
+
+Separately, each node keeps a private ledger of work exchanged with each peer
+(`~/.llmpool/ledger.json`). A peer may take up to `--free-credits` (50,000) more than it gave
+before your node stops serving it.
 
 ## Run a bootstrap node
 
