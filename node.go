@@ -49,14 +49,16 @@ type Config struct {
 	Private       bool              // assume we are behind NAT: reserve a slot on the bootstrap relays
 	Announce      []string          // extra public addrs, e.g. /dns4/boot.example.com/tcp/443/wss behind a tunnel
 	FreeCredits   int64             // how far into debt a stranger may go with us
+	MaxTokens     int               // cap on new tokens per request we serve; 0 = none
 	AnnounceEvery time.Duration     //
 }
 
 // Announce is what a serving node gossips about itself.
 type Announce struct {
-	Models []string `json:"models"`
-	Free   int      `json:"free"`
-	Max    int      `json:"max"`
+	Version string   `json:"v,omitempty"` // program version, so a future release can tell old nodes apart
+	Models  []string `json:"models"`
+	Free    int      `json:"free"`
+	Max     int      `json:"max"`
 }
 
 type peerInfo struct {
@@ -198,7 +200,7 @@ func NewNode(ctx context.Context, cfg Config) (*Node, error) {
 	}
 	ps.RegisterTopicValidator(ReceiptTopic, func(_ context.Context, _ peer.ID, msg *pubsub.Message) bool {
 		var sr SignedReceipt
-		return json.Unmarshal(msg.Data, &sr) == nil && sr.Valid()
+		return json.Unmarshal(msg.Data, &sr) == nil && n.receipts.acceptGossip(msg.GetFrom(), &sr)
 	})
 	if n.receipts.topic, err = ps.Join(ReceiptTopic); err != nil {
 		return nil, err
@@ -341,7 +343,7 @@ func (n *Node) announceLoop(ctx context.Context) {
 	sort.Strings(models)
 	for {
 		free := n.cfg.Concurrency - int(n.inflight.Load())
-		b, _ := json.Marshal(Announce{Models: models, Free: max(free, 0), Max: n.cfg.Concurrency})
+		b, _ := json.Marshal(Announce{Version: Version, Models: models, Free: max(free, 0), Max: n.cfg.Concurrency})
 		n.topic.Publish(ctx, b)
 		select {
 		case <-ctx.Done():

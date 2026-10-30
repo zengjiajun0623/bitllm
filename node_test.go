@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -88,7 +89,7 @@ func testNode(t *testing.T, ctx context.Context, cfg Config) *Node {
 
 func post(n *Node, body string) *httptest.ResponseRecorder {
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(body))
+	r := gwReq("POST", "/v1/chat/completions", strings.NewReader(body))
 	n.Gateway().ServeHTTP(w, r)
 	return w
 }
@@ -116,7 +117,7 @@ func TestNetwork(t *testing.T) {
 	}
 
 	w := httptest.NewRecorder()
-	client.Gateway().ServeHTTP(w, httptest.NewRequest("GET", "/v1/models", nil))
+	client.Gateway().ServeHTTP(w, gwReq("GET", "/v1/models", nil))
 	if !strings.Contains(w.Body.String(), `"id":"deepseek-v4.1-flash"`) {
 		t.Fatalf("models: %s", w.Body)
 	}
@@ -147,7 +148,7 @@ func TestNetwork(t *testing.T) {
 	waitCredits := func(n *Node, who string) {
 		t.Helper()
 		for deadline := time.Now().Add(10 * time.Second); ; {
-			if c := n.receipts.Tally()[srvID]; c.Credits == 40 && c.Jobs == 2 && c.Clients == 1 {
+			if c := n.receipts.Tally()[srvID]; c.Credits == 40 && c.Jobs == 2 {
 				return
 			}
 			if time.Now().After(deadline) {
@@ -172,6 +173,12 @@ func TestNetwork(t *testing.T) {
 	sr.Receipt.Credits *= 10
 	if sr.Valid() {
 		t.Fatal("inflated receipt still valid")
+	}
+	// Receipts are signed with a one-off client key, never the client's node id.
+	for _, sr := range late.receipts.all {
+		if sr.Receipt.Client == client.host.ID().String() {
+			t.Fatal("receipt names the client node")
+		}
 	}
 
 	// The client is now 40 in debt, past the server's 30 free credits.
@@ -327,7 +334,7 @@ func TestAnthropicMessages(t *testing.T) {
 	}
 	msg := func(body string) *httptest.ResponseRecorder {
 		w := httptest.NewRecorder()
-		client.Gateway().ServeHTTP(w, httptest.NewRequest("POST", "/v1/messages", strings.NewReader(body)))
+		client.Gateway().ServeHTTP(w, gwReq("POST", "/v1/messages", strings.NewReader(body)))
 		return w
 	}
 	w := msg(`{"model":"ds","stream":true,"max_tokens":50,"messages":[{"role":"user","content":"hi"}]}`)
@@ -419,10 +426,17 @@ func TestOwnerAccounts(t *testing.T) {
 
 	// The gateway refuses state changes from other web pages.
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/account/link", strings.NewReader(`{}`))
+	r := gwReq("POST", "/account/link", strings.NewReader(`{}`))
 	r.Header.Set("Origin", "https://evil.example")
 	a.Gateway().ServeHTTP(w, r)
 	if w.Code != 403 {
 		t.Fatalf("cross-origin link: %d", w.Code)
 	}
+}
+
+// gwReq is a request to the gateway as a local client sends it.
+func gwReq(method, target string, body io.Reader) *http.Request {
+	r := httptest.NewRequest(method, target, body)
+	r.Host = "127.0.0.1:7778"
+	return r
 }

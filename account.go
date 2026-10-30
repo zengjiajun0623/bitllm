@@ -241,7 +241,6 @@ type OwnerCredits struct {
 	Name    string          `json:"name,omitempty"`
 	Credits int64           `json:"credits"`
 	Jobs    int             `json:"jobs"`
-	Clients int             `json:"clients"`
 	Nodes   []NodeCreditRow `json:"nodes"`
 }
 
@@ -252,9 +251,8 @@ type NodeCreditRow struct {
 }
 
 // ownerTable groups per-node credits by each node's current owner.
-func ownerTable(perNode map[string]ServerCredits, clientsPerNode map[string]map[string]bool, claims *Claims) []OwnerCredits {
+func ownerTable(perNode map[string]ServerCredits, claims *Claims) []OwnerCredits {
 	rows := map[string]*OwnerCredits{}
-	clients := map[string]map[string]bool{}
 	for node, c := range perNode {
 		key, owner, name := "node:"+node, "", ""
 		if cl, ok := claims.get(node); ok {
@@ -264,21 +262,16 @@ func ownerTable(perNode map[string]ServerCredits, clientsPerNode map[string]map[
 		if r == nil {
 			r = &OwnerCredits{Owner: owner}
 			rows[key] = r
-			clients[key] = map[string]bool{}
 		}
 		if name != "" {
 			r.Name = name
 		}
 		r.Credits += c.Credits
 		r.Jobs += c.Jobs
-		for cl := range clientsPerNode[node] {
-			clients[key][cl] = true
-		}
 		r.Nodes = append(r.Nodes, NodeCreditRow{node, c.Credits, c.Jobs})
 	}
 	out := make([]OwnerCredits, 0, len(rows))
-	for k, r := range rows {
-		r.Clients = len(clients[k])
+	for _, r := range rows {
 		sort.Slice(r.Nodes, func(i, j int) bool { return r.Nodes[i].Credits > r.Nodes[j].Credits })
 		out = append(out, *r)
 	}

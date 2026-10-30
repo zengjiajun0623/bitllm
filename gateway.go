@@ -6,7 +6,9 @@ import (
 	"errors"
 	"io"
 	"log"
+	"net"
 	"net/http"
+	"net/netip"
 	"sort"
 	"strings"
 	"time"
@@ -40,11 +42,18 @@ func (n *Node) Gateway() http.Handler {
 	return sameOrigin(mux)
 }
 
-// sameOrigin refuses state-changing requests from other web pages. The
-// gateway listens on localhost without auth, so without this any website you
-// visit could spend your credits or relink your node through your browser.
+// sameOrigin refuses requests from other web pages. The gateway listens on
+// localhost without auth, so without this any website you visit could spend
+// your credits or relink your node through your browser. Checking Origin
+// alone is not enough: with DNS rebinding a page at evil.example resolves its
+// own name to 127.0.0.1, and then Origin and Host agree. So the Host must
+// also be an IP literal or localhost, which a rebinding page cannot send.
 func sameOrigin(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !localHost(r.Host) {
+			jsonErr(w, 403, "use http://127.0.0.1 or http://localhost to reach the gateway")
+			return
+		}
 		if o := r.Header.Get("Origin"); r.Method != "GET" && o != "" &&
 			o != "http://"+r.Host && o != "https://"+r.Host {
 			jsonErr(w, 403, "cross-origin request refused")
@@ -52,6 +61,18 @@ func sameOrigin(h http.Handler) http.Handler {
 		}
 		h.ServeHTTP(w, r)
 	})
+}
+
+func localHost(hostport string) bool {
+	host, _, err := net.SplitHostPort(hostport)
+	if err != nil {
+		host = hostport
+	}
+	host = strings.Trim(host, "[]")
+	if _, err := netip.ParseAddr(host); err == nil {
+		return true
+	}
+	return host == "localhost" || strings.HasSuffix(host, ".localhost")
 }
 
 func jsonErr(w http.ResponseWriter, status int, msg string) {
@@ -169,6 +190,7 @@ func (n *Node) status(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	json.NewEncoder(w).Encode(map[string]any{
+		"version":  Version,
 		"id":       n.host.ID().String(),
 		"addrs":    n.Addrs(),
 		"conns":    conns,

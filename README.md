@@ -24,6 +24,8 @@ Download a binary from [Releases](../../releases) (macOS arm64, Linux amd64/arm6
   the right is the network name. **Use the canonical names below** or nobody will find your model.
 - Without `--model`, every model your server lists is shared under its own name.
 - `--concurrency`: how many requests you serve at once. Extra requests queue on the client side.
+- `--max-tokens` (default 32768): the most new tokens one peer request may ask for. Peers also get one
+  choice per request (`n` is dropped).
 
 ### Canonical model names
 
@@ -67,7 +69,9 @@ The response header `X-Bitllm-Peer` says which peer answered.
 Every job you serve earns credits (prompt tokens / 4 + completion tokens), proven by a receipt:
 the client signs what it received (model, token counts, SHA-256 of the exact response bytes),
 your node checks it against what it sent and countersigns, and the receipt is gossiped to the
-whole network. Any node can verify both signatures and recompute everyone's credits:
+whole network. The client signs with a one-off key per job, so a receipt shows which server did
+the work but not who asked for it. Credits must equal the token formula, and each node accepts at
+most 120 receipts a minute per server (600 overall) from gossip. Any node can verify both signatures and recompute everyone's credits:
 
 ```bash
 curl localhost:7778/credits      # credits per serving peer, from every receipt this node has seen
@@ -112,7 +116,9 @@ the tunnel at `http://127.0.0.1:4002`. Others join with
 
 - **The peer that serves you sees your prompt**, like any inference provider. Transport is
   encrypted (Noise/TLS/QUIC), but the serving machine reads the plaintext. Don't send secrets.
-- **Peers you connect to directly see your IP address.**
+- **Peers you connect to directly see your IP address**, and the peer serving you sees your node id.
+  If that matters where you live, use the network through a VPN or Tor-capable VPS.
+- If you share a model, the clients you serve can see your IP too.
 - No verification yet: a node could serve a different model than it claims.
 - `--upnp` (on by default) asks your router to forward the p2p port.
 

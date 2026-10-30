@@ -13,6 +13,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -24,7 +25,10 @@ import (
 // stream requests, a JSON document otherwise.
 const InferProto = "/bitllm/infer/1.0.0"
 
-const maxRequest = 64 << 20
+const maxRequest = 16 << 20
+
+// readTimeout bounds how long a peer may take to send its request line.
+const readTimeout = 30 * time.Second
 
 type inferReq struct {
 	Job  string          `json:"job"` // client-chosen id, named in the receipt
@@ -137,12 +141,16 @@ func (m *meter) body(b []byte) {
 	}
 }
 
-func (m *meter) credits() int64 {
-	if !m.reported { // upstream ignored include_usage: rough estimate
-		return m.chars / 4
+// tokens returns the counts to bill. An upstream that ignored include_usage
+// is estimated at four characters per completion token.
+func (m *meter) tokens() (prompt, completion int64) {
+	if !m.reported {
+		return 0, m.chars / 4
 	}
-	return m.prompt/4 + m.completion
+	return m.prompt, m.completion
 }
+
+func (m *meter) credits() int64 { return price(m.tokens()) }
 
 // pipe copies a response body to dst, line by line for SSE so each event is
 // flushed as it arrives, and meters it on the way.
@@ -191,6 +199,7 @@ func (n *Node) callUpstream(ctx context.Context, path string, raw []byte) (*http
 		return nil, false, &peerError{404, fmt.Sprintf("model %q not served here", model)}
 	}
 	body["model"] = up
+	n.clamp(path, body)
 	stream, _ := body["stream"].(bool)
 	if stream && path != "/messages" { // Anthropic streams always carry usage
 		so, _ := body["stream_options"].(map[string]any)
@@ -216,6 +225,30 @@ func (n *Node) callUpstream(ctx context.Context, path string, raw []byte) (*http
 	return resp, stream, nil
 }
 
+// clamp keeps a peer from asking for more than one bounded answer: one
+// choice, and at most MaxTokens new tokens (set when the client gave none,
+// except on legacy /completions whose servers default to a short answer).
+func (n *Node) clamp(path string, body map[string]any) {
+	delete(body, "n")
+	delete(body, "best_of")
+	if n.cfg.MaxTokens <= 0 {
+		return
+	}
+	limit := float64(n.cfg.MaxTokens)
+	set := false
+	for _, k := range []string{"max_tokens", "max_completion_tokens"} {
+		if v, ok := body[k].(float64); ok {
+			body[k] = min(v, limit)
+			set = true
+		} else if _, ok := body[k]; ok {
+			delete(body, k)
+		}
+	}
+	if !set && path != "/completions" {
+		body["max_tokens"] = limit
+	}
+}
+
 // handleInfer serves one inference request from a peer.
 func (n *Node) handleInfer(s network.Stream) {
 	defer s.Close()
@@ -224,7 +257,9 @@ func (n *Node) handleInfer(s network.Stream) {
 		b, _ := json.Marshal(inferHdr{status, msg})
 		s.Write(append(b, '\n'))
 	}
+	s.SetReadDeadline(time.Now().Add(readTimeout))
 	line, err := bufio.NewReader(io.LimitReader(s, maxRequest)).ReadBytes('\n')
+	s.SetReadDeadline(time.Time{})
 	var req inferReq
 	if err != nil || json.Unmarshal(line, &req) != nil || !inferPaths[req.Path] {
 		reply(400, "bad request")

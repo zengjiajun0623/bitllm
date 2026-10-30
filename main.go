@@ -20,6 +20,9 @@ import (
 	"time"
 )
 
+// Version is set at release time with -ldflags "-X main.Version=v0.1.3".
+var Version = "dev"
+
 // DefaultBootstrap is used when no --bootstrap is given. Anyone can run a
 // bootstrap node; this one sits behind a Cloudflare Tunnel.
 var DefaultBootstrap = []string{
@@ -58,8 +61,14 @@ func main() {
 	flag.BoolVar(&cfg.DHTServer, "dht-server", false, "always act as a DHT server (for bootstrap nodes with a public address)")
 	flag.BoolVar(&cfg.MDNS, "mdns", true, "find peers on the local network")
 	flag.BoolVar(&cfg.UPnP, "upnp", true, "ask the router (UPnP/NAT-PMP) to forward the p2p port so peers can reach us directly")
+	flag.IntVar(&cfg.MaxTokens, "max-tokens", 32768, "most new tokens a peer may ask for in one request (0: no limit)")
+	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Int64Var(&cfg.FreeCredits, "free-credits", 50_000, "credits a peer may take from us before it must give back")
 	flag.Parse()
+	if *showVersion {
+		fmt.Println("bitllm", Version)
+		return
+	}
 
 	cfg.Upstream = strings.TrimRight(cfg.Upstream, "/")
 	cfg.Bootstrap = boot
@@ -95,7 +104,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("peer id %s", n.host.ID())
+	log.Printf("bitllm %s, peer id %s", Version, n.host.ID())
 	for _, a := range n.Addrs() {
 		log.Printf("listening %s", a)
 	}

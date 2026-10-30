@@ -23,6 +23,9 @@ import (
 // receipt. Any node can verify both signatures and tally credits per server,
 // so the record is public and checkable without a chain. Which receipts will
 // count (self-dealing, unverified models) is decided later, from these facts.
+//
+// The client signs with a fresh key for every job, not its node key, so the
+// public record says which server did how much work but not who asked for it.
 const (
 	ReceiptProto = "/bitllm/receipt/1.0.0"
 	SyncProto    = "/bitllm/receipts-sync/1.0.0"
@@ -62,10 +65,22 @@ func verifySig(id string, data, sig []byte) bool {
 	return err == nil && ok
 }
 
-// Valid checks both signatures.
+// maxJobTokens bounds the token counts of one receipt, so a pair of colluding
+// keys cannot mint arbitrary credits in a single signed line.
+const maxJobTokens = 4 << 20
+
+// price is the credits for a job: prefill is cheap relative to decode.
+func price(prompt, completion int64) int64 { return prompt/4 + completion }
+
+// Valid checks both signatures and that the credits follow from the token counts.
 func (sr *SignedReceipt) Valid() bool {
-	b := sr.Receipt.bytes()
-	return verifySig(sr.Receipt.Client, b, sr.ClientSig) && verifySig(sr.Receipt.Server, b, sr.ServerSig)
+	r := sr.Receipt
+	if r.Prompt < 0 || r.Completion < 0 || r.Prompt > maxJobTokens || r.Completion > maxJobTokens ||
+		r.Credits != price(r.Prompt, r.Completion) || len(r.Job) > 64 || len(r.Model) > 128 {
+		return false
+	}
+	b := r.bytes()
+	return verifySig(r.Client, b, sr.ClientSig) && verifySig(r.Server, b, sr.ServerSig)
 }
 
 // pendingJob is what a server remembers about a job until the client's receipt arrives.
@@ -79,7 +94,6 @@ type pendingJob struct {
 type ServerCredits struct {
 	Credits int64 `json:"credits"`
 	Jobs    int   `json:"jobs"`
-	Clients int   `json:"clients"`
 }
 
 // Receipts is every valid receipt this node has seen, appended to a file.
@@ -89,6 +103,7 @@ type Receipts struct {
 	seen    map[string]bool
 	all     []SignedReceipt
 	pending map[string]*pendingJob
+	rate    gossipRate
 	topic   *pubsub.Topic
 	key     crypto.PrivKey
 	self    peer.ID
@@ -130,30 +145,59 @@ func (rs *Receipts) add(sr SignedReceipt) bool {
 	return true
 }
 
+// Tally sums credits per server.
 func (rs *Receipts) Tally() map[string]ServerCredits {
-	out, _ := rs.tally()
-	return out
-}
-
-// tally sums credits per server and also returns each server's set of clients.
-func (rs *Receipts) tally() (map[string]ServerCredits, map[string]map[string]bool) {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
 	out := map[string]ServerCredits{}
-	clients := map[string]map[string]bool{}
 	for _, sr := range rs.all {
 		r := sr.Receipt
 		c := out[r.Server]
 		c.Credits += r.Credits
 		c.Jobs++
-		if clients[r.Server] == nil {
-			clients[r.Server] = map[string]bool{}
-		}
-		clients[r.Server][r.Client] = true
-		c.Clients = len(clients[r.Server])
 		out[r.Server] = c
 	}
-	return out, clients
+	return out
+}
+
+// Gossip limits. Valid receipts cost nothing to forge between two keys you
+// own, so without limits anyone could fill every node's memory and disk.
+// A receipt must be published by its own server, be recent, and fit under a
+// per-server and a network-wide rate.
+const (
+	receiptMaxAge    = time.Hour
+	receiptPerServer = 120 // per minute
+	receiptPerMinute = 600 // per minute, all servers together
+)
+
+type gossipRate struct {
+	mu     sync.Mutex
+	minute int64
+	total  int
+	per    map[string]int
+}
+
+func (g *gossipRate) allow(server string, now time.Time) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if m := now.Unix() / 60; m != g.minute {
+		g.minute, g.total, g.per = m, 0, map[string]int{}
+	}
+	if g.total >= receiptPerMinute || g.per[server] >= receiptPerServer {
+		return false
+	}
+	g.total++
+	g.per[server]++
+	return true
+}
+
+// acceptGossip is the topic validator for receipts.
+func (rs *Receipts) acceptGossip(from peer.ID, sr *SignedReceipt) bool {
+	r, now := sr.Receipt, time.Now()
+	if from.String() != r.Server || r.TS < now.Add(-receiptMaxAge).Unix() || r.TS > now.Add(10*time.Minute).Unix() {
+		return false
+	}
+	return sr.Valid() && rs.rate.allow(r.Server, now)
 }
 
 // served is called by the server when a job finishes.
@@ -179,12 +223,13 @@ func (rs *Receipts) countersign(sr *SignedReceipt, from peer.ID) error {
 	switch {
 	case p == nil:
 		return fmt.Errorf("unknown job")
-	case r.Server != rs.self.String() || r.Client != from.String() || p.client != from:
+	case r.Server != rs.self.String() || p.client != from:
 		return fmt.Errorf("wrong parties")
 	case !verifySig(r.Client, r.bytes(), sr.ClientSig):
 		return fmt.Errorf("bad client signature")
-	case r.Model != p.model || r.Output != p.m.sum() || r.Credits != p.m.credits() ||
-		r.Prompt != p.m.prompt || r.Completion != p.m.completion:
+	}
+	if prompt, completion := p.m.tokens(); r.Model != p.model || r.Output != p.m.sum() ||
+		r.Prompt != prompt || r.Completion != completion || r.Credits != p.m.credits() {
 		return fmt.Errorf("receipt does not match the job served")
 	}
 	sig, err := rs.key.Sign(r.bytes())
@@ -210,11 +255,18 @@ func (n *Node) handleReceipt(s network.Stream) {
 	s.Write([]byte("ok\n"))
 }
 
-// sendReceipt signs a receipt for a job p served us and gives it to p.
+// sendReceipt signs a receipt for a job p served us and gives it to p. It
+// signs with a one-off key, so the gossiped receipt does not name this node.
 func (n *Node) sendReceipt(p peer.ID, job, model string, m meter) error {
-	r := Receipt{Job: job, Model: model, Client: n.host.ID().String(), Server: p.String(),
-		Prompt: m.prompt, Completion: m.completion, Credits: m.credits(), Output: m.sum(), TS: time.Now().Unix()}
-	sig, err := n.receipts.key.Sign(r.bytes())
+	key, _, err := crypto.GenerateEd25519Key(nil)
+	if err != nil {
+		return err
+	}
+	client, _ := peer.IDFromPrivateKey(key)
+	prompt, completion := m.tokens()
+	r := Receipt{Job: job, Model: model, Client: client.String(), Server: p.String(),
+		Prompt: prompt, Completion: completion, Credits: m.credits(), Output: m.sum(), TS: time.Now().Unix()}
+	sig, err := key.Sign(r.bytes())
 	if err != nil {
 		return err
 	}
@@ -300,6 +352,5 @@ func (n *Node) readReceipts(ctx context.Context, sub *pubsub.Subscription) {
 
 // creditsTable is the tally grouped by owner, for the gateway.
 func (n *Node) creditsTable() []OwnerCredits {
-	perNode, clients := n.receipts.tally()
-	return ownerTable(perNode, clients, n.claims)
+	return ownerTable(n.receipts.Tally(), n.claims)
 }
