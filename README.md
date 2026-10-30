@@ -103,12 +103,13 @@ will not count.
 
 Invite-only beta. Three rules:
 
-1. You need an invite to get a free quota. Uninvited nodes are served only when the server is idle.
-2. A member gets a daily free quota on each server (`--free-daily`, set by the server owner; default 200,000 credits).
-3. Share compute and you're a contributor: no quota, and 10 invites instead of 3.
+1. An invite gets you served on any free slot. Uninvited nodes are served only when a server is idle, unless its owner opens it to everyone.
+2. There is no daily quota by default. A server owner can set one.
+3. Sharing makes you a contributor: never limited by quota, and 10 invites instead of 3 once your nodes have served.
 
 A member is the root account or anyone a member invited. Once your nodes have served a job you
-have 10 invites for good; while they have served one in the last 7 days you have no quota. A root
+have 10 invites for good. Owners can set a daily quota per member (`--free-daily`); contributors
+(nodes served in the last 7 days) are exempt. A root
 can revoke an account, which also removes everyone it invited (they can be invited again by
 someone else). Invites are signed with an Ethereum account and gossiped; every
 node computes the same member set, so there is no membership server. Servers look up the

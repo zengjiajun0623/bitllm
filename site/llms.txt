@@ -109,7 +109,7 @@ curl -s http://127.0.0.1:7778/status
 
 Check: `serving` in the status lists NETWORK_NAME. Set `--concurrency` to how many parallel requests the server can take without slowing the user down. Requests for a model the user shares are answered by their own server and never leave the machine.
 
-Useful flags: `--upstream-key KEY` if the server needs an API key; `--max-tokens N` caps tokens per peer request (default 32768); `--free-daily N` sets the daily free quota for members (default 200000 credits); `--open` also serves uninvited nodes on spare slots.
+Useful flags: `--upstream-key KEY` if the server needs an API key; `--max-tokens N` caps tokens per peer request (default 32768); `--free-daily N` sets a daily quota per member (default 0, no limit); `--open` also serves uninvited nodes on spare slots.
 
 ## Task 4: keep it running
 
@@ -136,9 +136,9 @@ Add the sharing flags to `ExecStart` for Task 3. On macOS, a LaunchAgent in `~/L
 
 ## Access rules (invite-only beta)
 
-1. An invite gives you a free quota. Uninvited nodes are served only when a server is idle, unless its owner opens it to everyone.
-2. Members get a daily quota on every server. Each owner sets it; the default is 200,000 credits a day.
-3. Sharing removes the limits: no quota while your nodes serve (last 7 days), and 10 invites instead of 3 once they have.
+1. An invite gets you served on any free slot. Uninvited nodes are served only when a server is idle, unless its owner opens it to everyone.
+2. There is no daily quota by default. A server owner can set one.
+3. Sharing makes you a contributor: never limited by quota, and 10 invites instead of 3 once your nodes have served.
 
 To become a member the user needs an Ethereum address, an invite from a member, and a link between this node and that address. The user does the wallet steps in the dashboard ("Link wallet"); do not handle their keys. `GET /members/me` shows the node's membership.
 
@@ -146,7 +146,7 @@ To become a member the user needs an Ethereum address, an invite from a member, 
 
 - `503 no peer serves model X`: nobody serves that name right now. Check `/v1/models` and use a listed id.
 - `429 busy ...`: every server is full or this node is uninvited on a closed server. The gateway already queued up to 60 seconds; retry later.
-- `429 daily free quota ... used up`: wait until 00:00 UTC, get invited, or share a model.
+- `429 daily free quota ... used up`: only if the owner set a quota; another server may still answer, or wait until 00:00 UTC.
 - `403 use http://127.0.0.1 or http://localhost`: the gateway only accepts local hostnames. Use 127.0.0.1, not the machine's LAN name.
 - Port 7778 in use: another node is already running (`curl -s 127.0.0.1:7778/status`), or start with `--gateway 127.0.0.1:PORT`.
 

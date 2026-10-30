@@ -75,8 +75,8 @@ func main() {
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.BoolVar(&cfg.Open, "open", false, "serve uninvited nodes like members (any free slot, --free-daily per node), not only when idle")
 	flag.IntVar(&cfg.OpenSlots, "open-slots", 0, "with --open: most slots uninvited nodes may hold at once (default: half of --concurrency, at least 1)")
-	flag.Int64Var(&cfg.OpenDaily, "open-daily", 2_000_000, "with --open: credits all uninvited nodes together may use per UTC day; after that they are served only when idle (0: no limit)")
-	flag.Int64Var(&cfg.FreeDaily, "free-daily", 200_000, "credits each member may use per UTC day on this server (contributors: no limit; 0: no limit)")
+	flag.Int64Var(&cfg.OpenDaily, "open-daily", 0, "with --open: credits all uninvited nodes together may use per UTC day, after which they are served only when idle (default 0: no limit)")
+	flag.Int64Var(&cfg.FreeDaily, "free-daily", 0, "credits each member may use per UTC day on this server; contributors are exempt (default 0: no limit)")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println("bitllm", Version)

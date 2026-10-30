@@ -122,7 +122,7 @@ func (n *Node) accountOf(p peer.ID) string {
 const (
 	msgBusy       = "busy"
 	msgUninvited  = "busy: this server serves uninvited nodes only when it is idle. Ask a member for an invite (bitllm invite), then link this node to your account"
-	msgQuotaSpent = "daily free quota on this server used up. Share a model to become a contributor (no quota), or try again after 00:00 UTC"
+	msgQuotaSpent = "daily free quota on this server used up (its owner set one). Another server may still answer; sharing a model removes the limit, or try again after 00:00 UTC"
 )
 
 // ticket is a taken serving slot and what the job will be charged to.

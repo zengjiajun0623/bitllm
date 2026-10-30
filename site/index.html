@@ -154,12 +154,11 @@ td code, p code, li code { font: 14px var(--code); overflow-wrap: anywhere; }
   <h2 id="access">Access</h2>
   <p>The beta runs on three rules, inspired by private BitTorrent trackers.</p>
   <ol class="rules" type="i">
-    <li><span class="lead">An invite gives you a free quota.</span> Uninvited nodes are served only when a server
-      is idle, unless its owner opens it to everyone.</li>
-    <li><span class="lead">Members get a daily quota on every server.</span> Each server owner sets it; the
-      default is 200,000 credits a day.</li>
-    <li><span class="lead">Sharing removes the limits.</span> No quota while your nodes serve (last 7 days), and
-      10 invites instead of 3 once they have.</li>
+    <li><span class="lead">An invite gets you served on any free slot.</span> Uninvited nodes are served only when a
+      server is idle, unless its owner opens it to everyone.</li>
+    <li><span class="lead">There is no daily quota by default.</span> A server owner can set one.</li>
+    <li><span class="lead">Sharing makes you a contributor:</span> never limited by quota, and 10 invites instead of 3
+      once your nodes have served.</li>
   </ol>
   <p>Invites are signed by an Ethereum account and gossiped like everything else, so there is no membership
     server. Ask a member to invite your address, then link your node to it from the dashboard. Revoking an

@@ -16,10 +16,11 @@ import (
 // computes the same member set from the same signed invites and revocations,
 // so there is no membership server. The rules:
 //
-//  1. Uninvited nodes are served only when the server is idle.
-//  2. Members get a daily free quota on each server (--free-daily).
-//  3. Contributors (accounts that served a job in the last 7 days) have no
-//     quota and 10 invites instead of 3.
+//  1. Members are served on any free slot; uninvited nodes only when the
+//     server is idle, unless it runs with --open.
+//  2. No daily quota by default; an owner can set one (--free-daily).
+//  3. Contributors (served a job in the last 7 days) are never limited by a
+//     quota, and an account that has ever served gets 10 invites, not 3.
 
 const (
 	MembersTopic       = "bitllm/invites/1"

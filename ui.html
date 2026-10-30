@@ -255,7 +255,7 @@ async function refresh() {
         ? `Not a member yet. Uninvited nodes are served only when a server is idle. Ask a member to invite your address, then link this node to it.`
         : !mem.member
         ? `Not a member yet. Ask a member to invite <span class="mono">${esc(mem.account)}</span>. Until then servers answer you only when idle.`
-        : `${mem.root ? "Root member" : mem.contributor ? "Contributor: no daily quota" : "Member: a daily free quota on every server"}${mem.invited_by ? `, invited by <span class="mono">${esc(mem.invited_by.slice(0, 6) + "…" + mem.invited_by.slice(-4))}</span>` : ""}. ${left}. ${count}.`;
+        : `${mem.root ? "Root member" : mem.contributor ? "Contributor: never limited by quota" : "Member: served on any free slot"}${mem.invited_by ? `, invited by <span class="mono">${esc(mem.invited_by.slice(0, 6) + "…" + mem.invited_by.slice(-4))}</span>` : ""}. ${left}. ${count}.`;
       $("invite-box").hidden = !(mem.member && window.ethereum && (mem.invites_limit < 0 || mem.invites_used < mem.invites_limit));
     }
 
