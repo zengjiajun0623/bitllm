@@ -46,7 +46,19 @@ curl localhost:7778/v1/chat/completions \
 curl localhost:7778/status                         # your peer id, connections, ledger
 ```
 
-Point any agent at it: `OPENAI_BASE_URL=http://127.0.0.1:7778/v1`, any API key. If you share
+Open `http://127.0.0.1:7778` for a dashboard with copy-paste setup for your agent and a
+connection test. The gateway speaks both OpenAI (`/v1/chat/completions`, `/v1/completions`) and
+Anthropic (`/v1/messages`), so Claude Code works as is:
+
+```bash
+M=deepseek-v4.1-flash-1017
+ANTHROPIC_BASE_URL=http://127.0.0.1:7778 ANTHROPIC_API_KEY=bitllm ANTHROPIC_MODEL=$M \
+ANTHROPIC_DEFAULT_OPUS_MODEL=$M ANTHROPIC_DEFAULT_SONNET_MODEL=$M ANTHROPIC_DEFAULT_HAIKU_MODEL=$M \
+CLAUDE_CODE_SUBAGENT_MODEL=$M claude
+```
+
+OpenAI clients (Cline, Continue, OpenCode, Aider...): base URL `http://127.0.0.1:7778/v1`, any API key.
+Anthropic requests need the serving peer's upstream to support `/v1/messages` (vLLM does). If you share
 a model yourself, your gateway answers it from your own server (free, never leaves your machine).
 The response header `X-Bitllm-Peer` says which peer answered.
 

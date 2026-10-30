@@ -44,6 +44,25 @@ func mockUpstream(t *testing.T, model string) *httptest.Server {
 				fmt.Fprintf(w, "data: {\"choices\":[],\"usage\":%s}\n\n", usage)
 			}
 			fmt.Fprint(w, "data: [DONE]\n\n")
+		case "/v1/messages":
+			var req struct {
+				Model  string `json:"model"`
+				Stream bool   `json:"stream"`
+			}
+			json.NewDecoder(r.Body).Decode(&req)
+			if req.Model != model {
+				http.Error(w, "wrong model "+req.Model, 404)
+				return
+			}
+			if !req.Stream {
+				fmt.Fprint(w, `{"type":"message","content":[{"type":"text","text":"hello world"}],"usage":{"input_tokens":40,"output_tokens":10}}`)
+				return
+			}
+			w.Header().Set("Content-Type", "text/event-stream")
+			fmt.Fprint(w, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":40,\"output_tokens\":1}}}\n\n")
+			fmt.Fprint(w, "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"hello world\"}}\n\n")
+			fmt.Fprint(w, "event: message_delta\ndata: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":10}}\n\n")
+			fmt.Fprint(w, "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
 		default:
 			http.NotFound(w, r)
 		}
@@ -284,5 +303,48 @@ func TestWebSocketBootstrap(t *testing.T) {
 			t.Fatal("never served via a WebSocket-only bootstrap")
 		}
 		time.Sleep(300 * time.Millisecond)
+	}
+}
+
+// TestAnthropicMessages: Claude Code speaks Anthropic /v1/messages; it must
+// work through a peer, with usage metered from Anthropic's event shapes.
+func TestAnthropicMessages(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	up := mockUpstream(t, "local-ds")
+	defer up.Close()
+	boot := testNode(t, ctx, Config{})
+	bs := boot.Addrs()[:1]
+	server := testNode(t, ctx, Config{Bootstrap: bs, Upstream: up.URL + "/v1",
+		Models: map[string]string{"ds": "local-ds"}, FreeCredits: 1000})
+	client := testNode(t, ctx, Config{Bootstrap: bs})
+	for deadline := time.Now().Add(20 * time.Second); len(client.candidates("ds")) == 0; {
+		if time.Now().After(deadline) {
+			t.Fatal("no discovery")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	msg := func(body string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		client.Gateway().ServeHTTP(w, httptest.NewRequest("POST", "/v1/messages", strings.NewReader(body)))
+		return w
+	}
+	w := msg(`{"model":"ds","stream":true,"max_tokens":50,"messages":[{"role":"user","content":"hi"}]}`)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "message_stop") {
+		t.Fatalf("stream: %d %s", w.Code, w.Body)
+	}
+	w = msg(`{"model":"ds","max_tokens":50,"messages":[{"role":"user","content":"hi"}]}`)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "hello world") {
+		t.Fatalf("non-stream: %d %s", w.Code, w.Body)
+	}
+	// 40 input / 4 + 10 output = 20 credits per job, on both sides.
+	if b := client.ledger.Balance(server.host.ID()); b != 40 {
+		t.Fatalf("client ledger %d, want 40", b)
+	}
+	for deadline := time.Now().Add(10 * time.Second); server.receipts.Tally()[server.host.ID().String()].Credits != 40; {
+		if time.Now().After(deadline) {
+			t.Fatalf("receipts: %+v", server.receipts.Tally())
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }

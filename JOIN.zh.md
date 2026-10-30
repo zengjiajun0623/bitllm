@@ -37,9 +37,20 @@ curl -s localhost:8000/v1/models     # 看 "id" 字段，比如 "deepseek-v4.1-f
 
 看到 `sharing map[...]` 和 `gateway http://127.0.0.1:7778/v1` 就说明接上了。
 
-## 3. 用网络里的模型
+## 3. 在 agent 里用网络里的模型
 
-程序在本机开了一个 OpenAI 兼容接口 `http://127.0.0.1:7778/v1`，任何支持 OpenAI 接口的工具都能直接用（API key 随便填）：
+浏览器打开 `http://127.0.0.1:7778`，页面上有 Claude Code、OpenAI 兼容工具、pi 的现成配置，点复制就行，还有一个"测试连接"按钮。
+
+本机接口同时支持 OpenAI 格式（`/v1/chat/completions`）和 Anthropic 格式（`/v1/messages`），所以 Claude Code 可以直接接：
+
+```bash
+M=deepseek-v4.1-flash-1017
+ANTHROPIC_BASE_URL=http://127.0.0.1:7778 ANTHROPIC_API_KEY=bitllm ANTHROPIC_MODEL=$M \
+ANTHROPIC_DEFAULT_OPUS_MODEL=$M ANTHROPIC_DEFAULT_SONNET_MODEL=$M ANTHROPIC_DEFAULT_HAIKU_MODEL=$M \
+CLAUDE_CODE_SUBAGENT_MODEL=$M claude
+```
+
+Cline、Continue、OpenCode、Aider 等 OpenAI 兼容工具：Base URL 填 `http://127.0.0.1:7778/v1`，API key 随便填。命令行试一下：
 
 ```bash
 curl localhost:7778/v1/models        # 网络里现在有哪些模型、各有几个节点

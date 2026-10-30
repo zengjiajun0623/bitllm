@@ -44,7 +44,9 @@ type peerError struct {
 
 func (e *peerError) Error() string { return fmt.Sprintf("%d: %s", e.status, e.msg) }
 
-var inferPaths = map[string]bool{"/chat/completions": true, "/completions": true}
+// inferPaths are the upstream endpoints a peer may call: OpenAI chat and
+// completions, and Anthropic messages (Claude Code and other Anthropic clients).
+var inferPaths = map[string]bool{"/chat/completions": true, "/completions": true, "/messages": true}
 
 // meter counts tokens in a response to price it: prefill is cheap relative to decode.
 type meter struct {
@@ -68,20 +70,40 @@ func (m *meter) sum() string {
 	return hex.EncodeToString(m.out.Sum(nil))
 }
 
-func (m *meter) usage(u *struct {
+// usage holds token counts in either OpenAI or Anthropic shape.
+type usage struct {
 	Prompt     int64 `json:"prompt_tokens"`
 	Completion int64 `json:"completion_tokens"`
-}) {
-	if u != nil {
-		m.prompt, m.completion, m.reported = u.Prompt, u.Completion, true
+	Input      int64 `json:"input_tokens"`
+	Output     int64 `json:"output_tokens"`
+}
+
+func (m *meter) usage(u *usage) {
+	if u == nil {
+		return
 	}
+	if u.Prompt > 0 || u.Completion > 0 {
+		m.prompt, m.completion = u.Prompt, u.Completion
+	}
+	// Anthropic streams input tokens in message_start and the running output
+	// count in message_delta, so take each when present.
+	if u.Input > 0 {
+		m.prompt = u.Input
+	}
+	if u.Output > 0 {
+		m.completion = u.Output
+	}
+	m.reported = true
 }
 
 type usageDoc struct {
-	Usage *struct {
-		Prompt     int64 `json:"prompt_tokens"`
-		Completion int64 `json:"completion_tokens"`
-	} `json:"usage"`
+	Usage   *usage `json:"usage"`
+	Message *struct {
+		Usage *usage `json:"usage"`
+	} `json:"message"` // Anthropic message_start
+	Delta struct {
+		Text string `json:"text"`
+	} `json:"delta"` // Anthropic content_block_delta
 	Choices []struct {
 		Delta struct {
 			Content string `json:"content"`
@@ -99,6 +121,10 @@ func (m *meter) sseLine(line []byte) {
 		return
 	}
 	m.usage(d.Usage)
+	if d.Message != nil {
+		m.usage(d.Message.Usage)
+	}
+	m.chars += int64(len(d.Delta.Text))
 	for _, c := range d.Choices {
 		m.chars += int64(len(c.Delta.Content))
 	}
@@ -153,7 +179,7 @@ func pipe(dst io.Writer, flush func(), src io.Reader, stream bool, m *meter) err
 	}
 }
 
-// callUpstream sends an OpenAI request for a public model name to our own server.
+// callUpstream sends an OpenAI or Anthropic request for a public model name to our own server.
 func (n *Node) callUpstream(ctx context.Context, path string, raw []byte) (*http.Response, bool, error) {
 	var body map[string]any
 	if err := json.Unmarshal(raw, &body); err != nil {
@@ -166,7 +192,7 @@ func (n *Node) callUpstream(ctx context.Context, path string, raw []byte) (*http
 	}
 	body["model"] = up
 	stream, _ := body["stream"].(bool)
-	if stream {
+	if stream && path != "/messages" { // Anthropic streams always carry usage
 		so, _ := body["stream_options"].(map[string]any)
 		if so == nil {
 			so = map[string]any{}

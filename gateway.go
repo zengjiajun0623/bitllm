@@ -25,6 +25,7 @@ func (n *Node) Gateway() http.Handler {
 	mux.HandleFunc("GET /v1/models", n.listModels)
 	mux.HandleFunc("POST /v1/chat/completions", n.complete("/chat/completions"))
 	mux.HandleFunc("POST /v1/completions", n.complete("/completions"))
+	mux.HandleFunc("POST /v1/messages", n.complete("/messages"))
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write(uiHTML)
