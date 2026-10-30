@@ -285,7 +285,7 @@ func (n *Node) handleReceipt(s network.Stream) {
 }
 
 // sendReceipt signs a receipt for a job p served us and gives it to p. It
-// signs with a one-off key, so the gossiped receipt does not name this node.
+// signs with its pseudonym for p, so the gossiped receipt does not name this node.
 func (n *Node) sendReceipt(p peer.ID, job, model string, m meter) error {
 	key, err := receiptKey(n.receiptSeed, p, time.Now())
 	if err != nil {
