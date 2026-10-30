@@ -30,6 +30,8 @@ func main() {
 	var (
 		cfg          Config
 		models, boot listFlag
+		announce     listFlag
+		wsPort       int
 		gateway      string
 		port         int
 	)
@@ -40,6 +42,8 @@ func main() {
 	flag.Var(&boot, "bootstrap", "multiaddr of a known peer, /ip4/.../tcp/4001/p2p/12D3... (repeatable)")
 	flag.StringVar(&gateway, "gateway", "127.0.0.1:7778", "local OpenAI-compatible gateway address")
 	flag.IntVar(&port, "port", 4001, "p2p port, TCP and UDP (QUIC)")
+	flag.IntVar(&wsPort, "ws-port", 0, "also accept libp2p over WebSocket on 127.0.0.1:PORT, for an HTTPS tunnel (Cloudflare Tunnel etc.) in front of a bootstrap node")
+	flag.Var(&announce, "announce", "public multiaddr to advertise, e.g. /dns4/boot.example.com/tcp/443/wss (repeatable)")
 	flag.StringVar(&cfg.DataDir, "data", filepath.Join(home, ".llmpool"), "identity and ledger directory")
 	flag.BoolVar(&cfg.DHTServer, "dht-server", false, "always act as a DHT server (for bootstrap nodes with a public address)")
 	flag.BoolVar(&cfg.MDNS, "mdns", true, "find peers on the local network")
@@ -57,6 +61,10 @@ func main() {
 		fmt.Sprintf("/ip6/::/tcp/%d", port),
 		fmt.Sprintf("/ip6/::/udp/%d/quic-v1", port),
 	}
+	if wsPort > 0 {
+		cfg.Listen = append(cfg.Listen, fmt.Sprintf("/ip4/127.0.0.1/tcp/%d/ws", wsPort))
+	}
+	cfg.Announce = announce
 	if len(models) > 0 {
 		cfg.Models = map[string]string{}
 		for _, m := range models {

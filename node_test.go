@@ -256,3 +256,33 @@ func TestBusyQueues(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 }
+
+// TestWebSocketBootstrap: the bootstrap node is reachable only over WebSocket,
+// as it would be behind an HTTPS tunnel.
+func TestWebSocketBootstrap(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	up := mockUpstream(t, "local-ds")
+	defer up.Close()
+	boot, err := NewNode(ctx, Config{Listen: []string{"/ip4/127.0.0.1/tcp/0/ws"}, DataDir: t.TempDir(),
+		DHTServer: true, AnnounceEvery: 300 * time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer boot.host.Close()
+	bs := boot.Addrs()[:1]
+	if !strings.Contains(bs[0], "/ws/") {
+		t.Fatalf("bootstrap addr %s", bs[0])
+	}
+	testNode(t, ctx, Config{Bootstrap: bs, Upstream: up.URL + "/v1", Models: map[string]string{"ds": "local-ds"}, FreeCredits: 1000})
+	client := testNode(t, ctx, Config{Bootstrap: bs})
+	for deadline := time.Now().Add(20 * time.Second); ; {
+		if w := post(client, `{"model":"ds","messages":[]}`); w.Code == 200 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("never served via a WebSocket-only bootstrap")
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+}

@@ -47,6 +47,7 @@ type Config struct {
 	MDNS          bool              //
 	UPnP          bool              // ask the router to forward our port (exposes the node publicly)
 	Private       bool              // assume we are behind NAT: reserve a slot on the bootstrap relays
+	Announce      []string          // extra public addrs, e.g. /dns4/boot.example.com/tcp/443/wss behind a tunnel
 	FreeCredits   int64             // how far into debt a stranger may go with us
 	AnnounceEvery time.Duration     //
 }
@@ -146,6 +147,19 @@ func NewNode(ctx context.Context, cfg Config) (*Node, error) {
 		opts = append(opts, libp2p.ForceReachabilityPrivate())
 	} else if cfg.DHTServer {
 		opts = append(opts, libp2p.ForceReachabilityPublic())
+	}
+	if len(cfg.Announce) > 0 {
+		var extra []ma.Multiaddr
+		for _, a := range cfg.Announce {
+			m, err := ma.NewMultiaddr(a)
+			if err != nil {
+				return nil, fmt.Errorf("announce %q: %w", a, err)
+			}
+			extra = append(extra, m)
+		}
+		opts = append(opts, libp2p.AddrsFactory(func(as []ma.Multiaddr) []ma.Multiaddr {
+			return append(as, extra...)
+		}))
 	}
 	if cfg.UPnP {
 		opts = append(opts, libp2p.NATPortMap())
