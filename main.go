@@ -73,6 +73,7 @@ func main() {
 	flag.BoolVar(&cfg.UPnP, "upnp", true, "ask the router (UPnP/NAT-PMP) to forward the p2p port so peers can reach us directly")
 	flag.IntVar(&cfg.MaxTokens, "max-tokens", 32768, "most new tokens a peer may ask for in one request (0: no limit)")
 	showVersion := flag.Bool("version", false, "print the version and exit")
+	flag.BoolVar(&cfg.Open, "open", false, "serve uninvited nodes like members (any free slot, --free-daily per node), not only when idle")
 	flag.Int64Var(&cfg.FreeDaily, "free-daily", 200_000, "credits each member may use per UTC day on this server (contributors: no limit; 0: no limit)")
 	flag.Parse()
 	if *showVersion {

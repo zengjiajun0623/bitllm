@@ -135,7 +135,7 @@ func (n *Node) admit(remote peer.ID, now time.Time) (status int, msg, key string
 		member = account != "" && ms.Member[account]
 		contributor = member && ms.Contributors[account]
 	}
-	if !member {
+	if !member && !n.cfg.Open {
 		if n.inflight.Add(1) > 1 { // idle means nothing else is running
 			n.inflight.Add(-1)
 			return 429, msgUninvited, ""
@@ -143,6 +143,9 @@ func (n *Node) admit(remote peer.ID, now time.Time) (status int, msg, key string
 		return 0, "", ""
 	}
 	key = account
+	if !member { // an open server treats uninvited nodes like members, per node
+		key = ""
+	}
 	if key == "" { // membership off and no account: count per node
 		key = "node:" + remote.String()
 	}

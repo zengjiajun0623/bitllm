@@ -51,6 +51,7 @@ type Config struct {
 	Announce         []string          // extra public addrs, e.g. /dns4/boot.example.com/tcp/443/wss behind a tunnel
 	FreeDaily        int64             // credits a member may use per UTC day on this server; contributors are unlimited
 	Roots            []string          // accounts at the top of the invite tree; none = membership off
+	Open             bool              // serve uninvited nodes like members (any free slot, quota per node)
 	MaxTokens        int               // cap on new tokens per request we serve; 0 = none
 	AnnounceEvery    time.Duration     //
 }

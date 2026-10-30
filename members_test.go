@@ -265,3 +265,31 @@ func TestInviteGossipAndSync(t *testing.T) {
 		t.Fatal("late joiner did not sync the invite")
 	}
 }
+
+// TestOpenServer: --open serves uninvited nodes on any free slot, with the
+// daily quota counted per node.
+func TestOpenServer(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	root := newEthKey(t)
+	n := testNode(t, ctx, Config{Roots: []string{root.addr}, Open: true, FreeDaily: 30, Concurrency: 2})
+	a, b := randomPeer(t), randomPeer(t)
+	now := time.Now()
+	s1, _, k1 := n.admit(a, now)
+	s2, _, _ := n.admit(b, now)
+	if s1 != 0 || s2 != 0 || k1 != "node:"+a.String() {
+		t.Fatalf("open server refused uninvited on free slots: %d %d %q", s1, s2, k1)
+	}
+	if s, msg, _ := n.admit(a, now); s != 429 || !isBusy(s, msg) {
+		t.Fatalf("admitted past concurrency: %d %s", s, msg)
+	}
+	n.inflight.Add(-2)
+	n.quota.add(k1, 30, now)
+	if s, msg, _ := n.admit(a, now); s != 429 || msg != msgQuotaSpent {
+		t.Fatalf("per-node quota not applied: %d %s", s, msg)
+	}
+	if s, _, _ := n.admit(b, now); s != 0 {
+		t.Fatal("one node's quota limited another")
+	}
+	n.inflight.Add(-1)
+}
