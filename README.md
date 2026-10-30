@@ -8,13 +8,16 @@ answers from whichever peer serves the model you ask for. There is no coordinato
 each other through a Kademlia DHT and gossip, connect directly when they can, and go through a
 relay plus hole punching when both sides are behind NAT.
 
+Download a binary from [Releases](../../releases) (macOS arm64, Linux amd64/arm64, Windows),
+`chmod +x` it, and run it. No port forwarding, no account, no config: it joins through
+`boot.bitllm.org` by default. 中文说明见 [JOIN.zh.md](JOIN.zh.md)。
+
 ## Share a model
 
 ```bash
 ./bitllm --upstream http://localhost:8000/v1 \
   --model <your-served-name>=deepseek-v4.1-flash-1017 \
-  --concurrency 2 \
-  --bootstrap <BOOTSTRAP_MULTIADDR>
+  --concurrency 2
 ```
 
 - `--model local=public`: the name on the left is what your server calls the model, the name on
@@ -36,7 +39,7 @@ Same name must mean same weights. Add a row (PR or message) before sharing a new
 Every node, sharing or not, has a gateway at `http://127.0.0.1:7778/v1`:
 
 ```bash
-./bitllm --bootstrap <BOOTSTRAP_MULTIADDR>      # use only, share nothing
+./bitllm                                         # use only, share nothing
 curl localhost:7778/v1/models
 curl localhost:7778/v1/chat/completions \
   -d '{"model":"deepseek-v4.1-flash-1017","stream":true,"messages":[{"role":"user","content":"hi"}]}'
@@ -71,6 +74,11 @@ before your node stops serving it.
 
 Any machine with a public IP: `./bitllm --dht-server --port 4001`, open TCP and UDP 4001.
 It also relays for NATed peers until they hole-punch a direct connection.
+
+No public IP? Put it behind an HTTPS tunnel that passes WebSockets (Cloudflare Tunnel, free):
+`./bitllm --dht-server --ws-port 4002 --announce /dns4/boot.example.org/tcp/443/wss` and point
+the tunnel at `http://127.0.0.1:4002`. Others join with
+`--bootstrap /dns4/boot.example.org/tcp/443/wss/p2p/<peer id>`.
 
 ## What you should know
 
