@@ -1,4 +1,4 @@
-module llmpool
+module github.com/zengjiajun0623/llmpool
 
 go 1.26.6
 
