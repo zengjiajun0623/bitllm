@@ -8,9 +8,20 @@ answers from whichever peer serves the model you ask for. There is no coordinato
 each other through a Kademlia DHT and gossip, connect directly when they can, and go through a
 relay plus hole punching when both sides are behind NAT.
 
-Download a binary from [Releases](../../releases) (macOS arm64, Linux amd64/arm64, Windows),
-`chmod +x` it, and run it. No port forwarding, no config: it joins through
-`boot.bitllm.org` by default. 中文说明见 [JOIN.zh.md](JOIN.zh.md)。
+Install and run (no port forwarding, no config; it joins through `boot.bitllm.org`):
+
+```bash
+# macOS (Apple silicon)
+curl -fL -o bitllm https://github.com/zengjiajun0623/bitllm/releases/latest/download/bitllm-darwin-arm64 && chmod +x bitllm && ./bitllm
+# Linux x86-64 (use bitllm-linux-arm64 on ARM, e.g. DGX Spark)
+curl -fL -o bitllm https://github.com/zengjiajun0623/bitllm/releases/latest/download/bitllm-linux-amd64 && chmod +x bitllm && ./bitllm
+# Windows (PowerShell)
+iwr -OutFile bitllm.exe https://github.com/zengjiajun0623/bitllm/releases/latest/download/bitllm-windows-amd64.exe; .\bitllm.exe
+```
+
+Then open http://127.0.0.1:7778: pick a model, copy the setup for your agent, and send a test
+message. Downloading with curl avoids the macOS quarantine flag a browser download gets.
+中文说明见 [JOIN.zh.md](JOIN.zh.md)。
 
 ## Share a model
 

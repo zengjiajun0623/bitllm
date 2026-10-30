@@ -4,17 +4,20 @@ BitLLM 是一个本地大模型的点对点网络：把你自己跑的模型分�
 
 ## 1. 下载
 
-在 [Releases](../../releases) 下载对应系统的程序：
-
-- Mac（Apple 芯片）：`bitllm-darwin-arm64`
-- Linux：`bitllm-linux-amd64`（x86）或 `bitllm-linux-arm64`（ARM，例如 DGX Spark）
-- Windows：`bitllm-windows-amd64.exe`
+复制对应系统的一行命令，下载、加执行权限、运行一步到位：
 
 ```bash
-chmod +x bitllm-*      # Mac / Linux
+# Mac（Apple 芯片）
+curl -fL -o bitllm https://github.com/zengjiajun0623/bitllm/releases/latest/download/bitllm-darwin-arm64 && chmod +x bitllm && ./bitllm
+# Linux x86（ARM 机器比如 DGX Spark 用 bitllm-linux-arm64）
+curl -fL -o bitllm https://github.com/zengjiajun0623/bitllm/releases/latest/download/bitllm-linux-amd64 && chmod +x bitllm && ./bitllm
+# Windows（PowerShell）
+iwr -OutFile bitllm.exe https://github.com/zengjiajun0623/bitllm/releases/latest/download/bitllm-windows-amd64.exe; .\bitllm.exe
 ```
 
-Mac 第一次运行如果提示"无法验证开发者"，执行一次：`xattr -d com.apple.quarantine bitllm-darwin-arm64`
+然后浏览器打开 http://127.0.0.1:7778 ，选一个模型，复制给你的 agent 用的配置，点"发送测试消息"确认能用。用 curl 下载不会被 Mac 隔离，不会弹"无法验证开发者"。
+
+下面的命令里 `./bitllm-...` 都指这个 `bitllm`（Windows 是 `.\bitllm.exe`）。
 
 ## 2. 分享你的 DeepSeek V4.1 Flash 1017
 
@@ -27,7 +30,7 @@ curl -s localhost:8000/v1/models     # 看 "id" 字段，比如 "deepseek-v4.1-f
 然后把这个名字映射成网络里的统一名字：
 
 ```bash
-./bitllm-linux-arm64 --upstream http://localhost:8000/v1 \
+./bitllm --upstream http://localhost:8000/v1 \
   --model deepseek-v4.1-flash=deepseek-v4.1-flash-1017 \
   --concurrency 2
 ```
@@ -73,7 +76,7 @@ curl localhost:7778/v1/chat/completions \
 邀请别人：用浏览器钱包的话，在控制台的 Invite 框里填对方地址；用助记词账户的话：
 
 ```bash
-./bitllm-... invite 0x对方地址
+./bitllm invite 0x对方地址
 ```
 
 ## 5. 积分
@@ -87,9 +90,9 @@ curl localhost:7778/credits
 积分是记在节点上的。想把自己几台机器的积分合到一个账户下，就把每个节点关联到同一个以太坊地址。这只是签一个名：不发交易、不花 gas、不上链。
 
 ```bash
-./bitllm-... account new --name 你的名字     # 生成新账户（12 个助记词，务必抄下来），并关联这台机器
-./bitllm-... account link --name 你的名字    # 在另一台机器上，输入同一组助记词关联
-./bitllm-... account                        # 查看这台机器归谁
+./bitllm account new --name 你的名字     # 生成新账户（12 个助记词，务必抄下来），并关联这台机器
+./bitllm account link --name 你的名字    # 在另一台机器上，输入同一组助记词关联
+./bitllm account                        # 查看这台机器归谁
 ```
 
 也可以在控制台页面点"Link wallet"，用浏览器钱包（MetaMask、Rabby 等）签名关联。助记词就是账户本身，丢了就找不回来，别人拿到就能冒充你。
