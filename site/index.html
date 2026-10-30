@@ -20,6 +20,7 @@
   --code: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
   color-scheme: light;
 }
+
 * { box-sizing: border-box; }
 body { background: var(--paper); color: var(--ink); font: 19px/1.55 var(--serif); }
 a { color: inherit; text-decoration-thickness: 1px; text-underline-offset: 3px; }
@@ -39,7 +40,11 @@ h1 { font-size: clamp(28px, 4.6vw, 38px); line-height: 1.2; font-weight: 700; ma
 
 figure { margin: 0 0 40px; }
 .fig { position: relative; aspect-ratio: 7 / 4; max-width: 100%; }
-.fig canvas { width: 100%; height: 100%; display: block; }
+.fig canvas { width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: manipulation; }
+.figctl { display: flex; justify-content: space-between; align-items: baseline; gap: 6px 16px; flex-wrap: wrap; margin-top: 8px; font-size: 15px; color: var(--sub); font-variant-numeric: tabular-nums; }
+.figbtns { display: flex; gap: 14px; flex-wrap: wrap; }
+.figbtns button { font: italic 15px var(--serif); background: none; border: 0; padding: 2px 0; color: var(--ink); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.figbtns button:hover { color: var(--use); }
 figcaption { font-size: 16px; color: var(--sub); text-align: center; margin-top: 10px; text-wrap: balance; }
 figcaption b { color: var(--ink); font-weight: 600; }
 .k { display: inline-block; width: 9px; height: 9px; margin: 0 4px 0 2px; vertical-align: 1px; }
@@ -110,9 +115,11 @@ td code, p code, li code { font: 14px var(--code); overflow-wrap: anywhere; }
     <div class="fig" role="img" aria-label="Figure 1: your request travels peer to peer to one of many home GPUs, and tokens stream straight back">
       <canvas id="swarm"></canvas>
     </div>
-    <figcaption><b>Figure 1.</b> Your agent <span class="k" style="background:var(--use)"></span>sends a request to one of the
-      home GPUs <span class="k" style="background:var(--share)"></span>sharing a model, and the tokens stream straight back.
-      Other nodes <span class="k" style="background:var(--node)"></span>relay and route. An illustration, not live data.</figcaption>
+    <div class="figctl"><span id="figstats"></span><span class="figbtns"><button type="button" id="fig-off">switch off a GPU</button><button type="button" id="fig-add">add a GPU</button><button type="button" id="fig-reset">reset</button></span></div>
+    <figcaption><b>Figure 1.</b> Clients <span class="k" style="background:var(--use)"></span>ask, home GPUs <span class="k" style="background:var(--share)"></span>answer
+      (each has two slots), other nodes <span class="k" style="background:var(--node)"></span>relay. A request goes through a relay first, then the link turns
+      direct and tokens stream back. Click a GPU to switch it off and watch requests route around it; click empty space to add one.
+      An illustration, not live data.</figcaption>
   </figure>
 
   <h2 id="use">Using the network</h2>
@@ -202,47 +209,156 @@ document.addEventListener("click", e => {
   navigator.clipboard.writeText(text).then(done, () => { const r = document.createRange(); r.selectNodeContents(box); getSelection().removeAllRanges(); getSelection().addRange(r); });
 });
 
-// Figure 1. Homes scattered across a plane, a few sharing GPUs. Illustration.
+// Figure 1, interactive. Relays route, GPUs (two slots each) serve, clients
+// ask. A request goes through a relay first, then hole punching makes the
+// link direct and tokens stream back. Switch a GPU off and its streams break
+// and reroute; click empty space and a new GPU joins. Illustration only.
 (() => {
   const cv = document.getElementById("swarm"), ctx = cv.getContext("2d");
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-  let W, H, nodes, links, you, gpus, t0 = performance.now(), seed;
+  const statsEl = document.getElementById("figstats");
+  let W = 0, H = 0, seed, relays, gpus, clients, links, jobs, served, rerouted, hover = null, last = 0;
   const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  function build() {
+  const d2 = (a, b) => (a.x - b.x) ** 2 + ((a.y - b.y) * H / W) ** 2;
+
+  function init() {
+    seed = 11; relays = []; gpus = []; jobs = []; served = 0; rerouted = 0;
+    for (let i = 0; i < 44; i++) relays.push({ x: .04 + rnd() * .92, y: .07 + rnd() * .86 });
+    for (let i = 0; i < 7; i++) gpus.push({ x: .3 + rnd() * .66, y: .08 + rnd() * .84, on: true, busy: 0, flash: 0 });
+    clients = [
+      { x: .1, y: .52, main: true, next: 0, job: null, wait: false },
+      { x: .36, y: .93, next: 1.4, job: null, wait: false },
+      { x: .55, y: .06, next: 2.6, job: null, wait: false },
+    ];
+    linkUp();
+  }
+  function linkUp() {
+    const all = [...relays, ...gpus, ...clients];
+    links = [];
+    all.forEach((a, i) => all.map((b, j) => [j, d2(a, b)]).filter(([j]) => j !== i)
+      .sort((p, q) => p[1] - q[1]).slice(0, 2).forEach(([j]) => links.push([all[i], all[j]])));
+  }
+  function size() {
     const dpr = devicePixelRatio || 1, b = cv.getBoundingClientRect();
     W = b.width; H = b.height; cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    seed = 11; nodes = [];
-    for (let i = 0; i < 54; i++) nodes.push({ x: .04 + rnd() * .92, y: .07 + rnd() * .86, g: false });
-    gpus = [2, 9, 17, 25, 33, 40, 48].map(i => (nodes[i].g = true, nodes[i]));
-    you = { x: .12, y: .5 }; nodes.push(you);
-    links = [];
-    nodes.forEach((a, i) => nodes.map((b, j) => [j, (a.x - b.x) ** 2 + ((a.y - b.y) * H / W) ** 2])
-      .filter(([j]) => j !== i).sort((p, q) => p[1] - q[1]).slice(0, 2).forEach(([j]) => links.push([i, j])));
   }
+  const free = () => gpus.filter(g => g.on && g.busy < 2);
+  function start(c, t) {
+    const g = free().sort((a, b) => d2(c, a) - d2(c, b))[0];
+    if (!g) { c.wait = true; return; }
+    const mid = { x: (c.x + g.x) / 2, y: (c.y + g.y) / 2 };
+    const r = relays.slice().sort((a, b) => d2(mid, a) - d2(mid, b))[0];
+    c.wait = false; g.busy++;
+    c.job = { c, g, r, t0: t, dur: 2.4 + Math.random() * 1.6 };
+    jobs.push(c.job);
+  }
+  function finish(j, t, ok) {
+    jobs = jobs.filter(x => x !== j); j.c.job = null;
+    if (ok) { j.g.busy--; served++; j.c.next = t + (j.c.main ? .7 + Math.random() * .8 : 1.8 + Math.random() * 2.2); }
+    else { rerouted++; j.c.next = t + .35; }
+  }
+  function toggle(g, t) {
+    g.on = !g.on; g.flash = t;
+    if (!g.on) { jobs.filter(j => j.g === g).forEach(j => finish(j, t, false)); g.busy = 0; }
+    stats();
+  }
+  function addGPU(x, y, t) {
+    if (gpus.length >= 14) return;
+    gpus.push({ x, y, on: true, busy: 0, flash: t }); linkUp(); stats();
+  }
+  function stats() {
+    if (!statsEl) return;
+    const on = gpus.filter(g => g.on).length;
+    statsEl.textContent = `${on} GPU${on === 1 ? "" : "s"} online · ${served} answer${served === 1 ? "" : "s"} streamed · ${rerouted} rerouted`;
+  }
+
   const dot = (x, y, s, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y, s, 0, 7); ctx.fill(); };
-  function frame(now) {
-    const t = still ? 1.1 : Math.max(0, now - t0) / 1000;
-    const ink = css("--ink"), node = css("--node"), use = css("--use"), share = css("--share");
+  const along = (pts, q) => { // point at fraction q of a polyline
+    const segs = pts.slice(1).map((p, i) => Math.hypot(p.x - pts[i].x, p.y - pts[i].y)), L = segs.reduce((a, b) => a + b, 0);
+    let d = q * L;
+    for (let i = 0; i < segs.length; i++) { if (d <= segs[i] || i === segs.length - 1) { const f = segs[i] ? Math.min(1, d / segs[i]) : 0; return { x: pts[i].x + (pts[i + 1].x - pts[i].x) * f, y: pts[i].y + (pts[i + 1].y - pts[i].y) * f }; } d -= segs[i]; }
+  };
+  const P = n => ({ x: n.x * W, y: n.y * H });
+
+  function draw(t) {
+    const ink = css("--ink"), node = css("--node"), use = css("--use"), share = css("--share"), sub = css("--sub");
     ctx.clearRect(0, 0, W, H);
-    ctx.strokeStyle = node; ctx.globalAlpha = .45; ctx.lineWidth = .8;
-    links.forEach(([i, j]) => { ctx.beginPath(); ctx.moveTo(nodes[i].x * W, nodes[i].y * H); ctx.lineTo(nodes[j].x * W, nodes[j].y * H); ctx.stroke(); });
+    ctx.strokeStyle = node; ctx.globalAlpha = .35; ctx.lineWidth = .8;
+    links.forEach(([a, b]) => { ctx.beginPath(); ctx.moveTo(a.x * W, a.y * H); ctx.lineTo(b.x * W, b.y * H); ctx.stroke(); });
     ctx.globalAlpha = 1;
-    const k = still ? 1 : Math.floor(t / 3.2) % gpus.length, g = gpus[k], p = (t % 3.2) / 3.2;
-    const ax = you.x * W, ay = you.y * H, bx = g.x * W, by = g.y * H;
-    ctx.strokeStyle = ink; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
-    if (p < .22) { const q = p / .22; dot(ax + (bx - ax) * q, ay + (by - ay) * q, 4, use); }
-    else for (let d = 0; d < 9; d++) { const q = (p - .22) / .78 * 1.5 - d * .06; if (q > 0 && q < 1) dot(bx + (ax - bx) * q, by + (ay - by) * q, 2.6, share); }
-    nodes.forEach(n => { if (!n.g && n !== you) dot(n.x * W, n.y * H, 2.4, node); });
-    gpus.forEach(n => { ctx.fillStyle = share; ctx.fillRect(n.x * W - 6, n.y * H - 6, 12, 12); });
-    dot(ax, ay, 7, use);
-    ctx.fillStyle = ink; ctx.font = "italic 15px " + css("--serif");
-    ctx.fillText("you", ax - 11, ay + 24);
-    ctx.fillText("GPU", bx + 10, by - 9);
-    if (!still) requestAnimationFrame(frame);
+    relays.forEach(r => dot(r.x * W, r.y * H, 2.3, node));
+
+    jobs.forEach(j => {
+      const e = t - j.t0, c = P(j.c), g = P(j.g), r = P(j.r);
+      if (e < .8) { // request via the relay
+        ctx.strokeStyle = ink; ctx.globalAlpha = .55; ctx.lineWidth = 1; ctx.setLineDash([3, 4]);
+        ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(r.x, r.y); ctx.lineTo(g.x, g.y); ctx.stroke();
+        ctx.setLineDash([]); ctx.globalAlpha = 1;
+        const p = along([c, r, g], e / .8); dot(p.x, p.y, 3.6, use);
+        dot(r.x, r.y, 4, ink);
+      } else { // direct after hole punching, tokens stream back
+        const k = Math.min(1, (e - .8) / .15);
+        ctx.strokeStyle = ink; ctx.lineWidth = 1.2; ctx.globalAlpha = k;
+        ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(g.x, g.y); ctx.stroke(); ctx.globalAlpha = 1;
+        const s = e - .95;
+        for (let i = 0; i < 40; i++) {
+          const q = s * .9 - i * .055;
+          if (q < 0) break;
+          if (q > 1 || s > j.dur - .2 + i * .055) continue;
+          dot(g.x + (c.x - g.x) * q, g.y + (c.y - g.y) * q, 2.4, share);
+        }
+      }
+      if (e > j.dur + 1) finish(j, t, true);
+    });
+
+    gpus.forEach(gn => {
+      const g = P(gn), hov = hover === gn, fl = Math.max(0, 1 - (t - gn.flash) / .5);
+      if (gn.on) {
+        ctx.fillStyle = share; ctx.fillRect(g.x - 6 - fl * 3, g.y - 6 - fl * 3, 12 + fl * 6, 12 + fl * 6);
+        for (let s = 0; s < 2; s++) { ctx.fillStyle = s < gn.busy ? ink : node; ctx.globalAlpha = s < gn.busy ? 1 : .45; ctx.fillRect(g.x - 6 + s * 7, g.y - 13, 5, 3); }
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.strokeStyle = sub; ctx.lineWidth = 1.3; ctx.strokeRect(g.x - 6, g.y - 6, 12, 12);
+        ctx.beginPath(); ctx.moveTo(g.x - 6, g.y + 6); ctx.lineTo(g.x + 6, g.y - 6); ctx.stroke();
+      }
+      if (hov) { ctx.fillStyle = ink; ctx.font = "italic 14px " + css("--serif"); ctx.fillText(gn.on ? "switch off" : "switch on", g.x + 11, g.y + 4); }
+    });
+
+    clients.forEach(cn => {
+      const c = P(cn);
+      if (cn.wait) { ctx.strokeStyle = use; ctx.lineWidth = 1.2; ctx.globalAlpha = .4 + .4 * Math.sin(t * 6); ctx.beginPath(); ctx.arc(c.x, c.y, 12, 0, 7); ctx.stroke(); ctx.globalAlpha = 1; }
+      dot(c.x, c.y, cn.main ? 7 : 5, use);
+      if (cn.main) { ctx.fillStyle = ink; ctx.font = "italic 15px " + css("--serif"); ctx.fillText(cn.wait ? "you (waiting)" : "you", c.x - 11, c.y + 24); }
+    });
   }
-  build(); requestAnimationFrame(frame);
-  addEventListener("resize", () => { build(); if (still) requestAnimationFrame(frame); });
+
+  function step(t) {
+    clients.forEach(c => { if (!c.job && (c.wait || t >= c.next)) start(c, t); });
+    draw(t); stats();
+  }
+  let t0 = performance.now();
+  const now = () => Math.max(0, performance.now() - t0) / 1000;
+  function loop() { step(now()); requestAnimationFrame(loop); }
+
+  const at = e => { const b = cv.getBoundingClientRect(); return { x: (e.clientX - b.left) / W, y: (e.clientY - b.top) / H }; };
+  const gpuAt = p => gpus.find(g => Math.hypot((g.x - p.x) * W, (g.y - p.y) * H) < 14);
+  cv.addEventListener("pointermove", e => { hover = gpuAt(at(e)) || null; cv.style.cursor = hover ? "pointer" : "crosshair"; if (still) draw(1.2); });
+  cv.addEventListener("pointerleave", () => { hover = null; if (still) draw(1.2); });
+  cv.addEventListener("click", e => {
+    const p = at(e), g = gpuAt(p);
+    if (g) toggle(g, now());
+    else if (p.x > .03 && p.x < .97 && p.y > .05 && p.y < .95 && !clients.some(c => Math.hypot((c.x - p.x) * W, (c.y - p.y) * H) < 18)) addGPU(p.x, p.y, now());
+    if (still) draw(1.2);
+  });
+  document.getElementById("fig-off")?.addEventListener("click", () => { const on = gpus.filter(g => g.on); if (on.length) toggle(on[Math.floor(Math.random() * on.length)], now()); if (still) draw(1.2); });
+  document.getElementById("fig-add")?.addEventListener("click", () => { addGPU(.3 + Math.random() * .64, .1 + Math.random() * .8, now()); if (still) draw(1.2); });
+  document.getElementById("fig-reset")?.addEventListener("click", () => { init(); t0 = performance.now(); stats(); if (still) draw(1.2); });
+
+  size(); init();
+  if (still) { clients.forEach(c => start(c, 0)); draw(1.4); stats(); }
+  else requestAnimationFrame(loop);
+  addEventListener("resize", () => { size(); linkUp(); if (still) draw(1.4); });
 })();
 </script>
 </body>
