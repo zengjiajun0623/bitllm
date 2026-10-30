@@ -84,6 +84,8 @@ func main() {
 		fmt.Sprintf("/ip6/::/udp/%d/quic-v1", port),
 	}
 	if wsPort > 0 {
+		// Peers arriving through the tunnel all come from 127.0.0.1.
+		cfg.RelayBehindProxy = true
 		cfg.Listen = append(cfg.Listen, fmt.Sprintf("/ip4/127.0.0.1/tcp/%d/ws", wsPort))
 	}
 	cfg.Announce = announce

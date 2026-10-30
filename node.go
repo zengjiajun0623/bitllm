@@ -36,21 +36,22 @@ const (
 )
 
 type Config struct {
-	Upstream      string            // OpenAI-compatible base URL to share; empty = client only
-	UpstreamKey   string            //
-	Models        map[string]string // public name -> upstream name; empty = discover
-	Concurrency   int               //
-	Listen        []string          // libp2p listen multiaddrs
-	Bootstrap     []string          // multiaddrs with /p2p/ID
-	DataDir       string            //
-	DHTServer     bool              // force DHT server mode (bootstrap nodes, tests)
-	MDNS          bool              //
-	UPnP          bool              // ask the router to forward our port (exposes the node publicly)
-	Private       bool              // assume we are behind NAT: reserve a slot on the bootstrap relays
-	Announce      []string          // extra public addrs, e.g. /dns4/boot.example.com/tcp/443/wss behind a tunnel
-	FreeCredits   int64             // how far into debt a stranger may go with us
-	MaxTokens     int               // cap on new tokens per request we serve; 0 = none
-	AnnounceEvery time.Duration     //
+	Upstream         string            // OpenAI-compatible base URL to share; empty = client only
+	UpstreamKey      string            //
+	Models           map[string]string // public name -> upstream name; empty = discover
+	Concurrency      int               //
+	Listen           []string          // libp2p listen multiaddrs
+	Bootstrap        []string          // multiaddrs with /p2p/ID
+	DataDir          string            //
+	DHTServer        bool              // force DHT server mode (bootstrap nodes, tests)
+	MDNS             bool              //
+	UPnP             bool              // ask the router to forward our port (exposes the node publicly)
+	Private          bool              // assume we are behind NAT: reserve a slot on the bootstrap relays
+	RelayBehindProxy bool              // peers reach our relay through a tunnel, all from one IP
+	Announce         []string          // extra public addrs, e.g. /dns4/boot.example.com/tcp/443/wss behind a tunnel
+	FreeCredits      int64             // how far into debt a stranger may go with us
+	MaxTokens        int               // cap on new tokens per request we serve; 0 = none
+	AnnounceEvery    time.Duration     //
 }
 
 // Announce is what a serving node gossips about itself.
@@ -137,7 +138,7 @@ func NewNode(ctx context.Context, cfg Config) (*Node, error) {
 		libp2p.EnableHolePunching(),
 		// Public nodes relay for NATed ones until hole punching upgrades the link.
 		// Inference streams are long, so the relay must not cut them off.
-		libp2p.EnableRelayService(relay.WithResources(relayResources())),
+		libp2p.EnableRelayService(relay.WithResources(relayResources(cfg.RelayBehindProxy))),
 		libp2p.Routing(func(h host.Host) (routing.PeerRouting, error) {
 			var err error
 			n.dht, err = dht.New(h, dht.Mode(mode), dht.ProtocolPrefix("/bitllm"),
@@ -321,12 +322,18 @@ func (n *Node) Link(owner, name string, t int64, ownerSig string) (*Claim, error
 
 // relayResources: no per-circuit time or byte limit (inference streams are
 // long), but bounded slots so a public bootstrap is not an open-ended relay.
-func relayResources() relay.Resources {
+// The default cap of 8 reservations per source IP is the only sybil guard on a
+// public-IP relay, but behind a tunnel every peer arrives from 127.0.0.1, so
+// there it would let only 8 NATed nodes in the whole network be reachable.
+func relayResources(behindProxy bool) relay.Resources {
 	rc := relay.DefaultResources()
 	rc.Limit = nil
 	rc.MaxReservations = 1024     // NATed peers that can be reached through us
 	rc.MaxReservationsPerPeer = 2 // default 1; 2 tolerates a reconnect overlap
 	rc.MaxCircuits = 64           // open relayed connections per peer
+	if behindProxy {
+		rc.MaxReservationsPerIP = rc.MaxReservations
+	}
 	return rc
 }
 

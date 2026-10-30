@@ -177,3 +177,48 @@ func TestReceiptPseudonym(t *testing.T) {
 		t.Fatal("a new seed kept the old pseudonym")
 	}
 }
+
+// TestRelayBehindProxyReservations: behind a tunnel every peer reaches the
+// bootstrap from 127.0.0.1, so the default 8 reservations per IP would leave
+// NATed node number 9 unreachable. A bootstrap marked RelayBehindProxy must
+// hold more than 8.
+func TestRelayBehindProxyReservations(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	boot := testNode(t, ctx, Config{RelayBehindProxy: true})
+	bs := boot.Addrs()[:1]
+	const n = 11
+	var natted []*Node
+	for range n {
+		nd, err := NewNode(ctx, Config{Bootstrap: bs, Private: true, DataDir: t.TempDir(), AnnounceEvery: time.Second})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { nd.host.Close() })
+		natted = append(natted, nd)
+	}
+	// The client accepts no inbound connections either, so the relay is the only path.
+	client, err := NewNode(ctx, Config{Bootstrap: bs, Private: true, DataDir: t.TempDir(), AnnounceEvery: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { client.host.Close() })
+	reached := map[int]bool{}
+	for deadline := time.Now().Add(30 * time.Second); len(reached) < n; {
+		for i, nd := range natted {
+			if reached[i] {
+				continue
+			}
+			client.addRelayPaths(nd.host.ID())
+			cctx, c := context.WithTimeout(ctx, 2*time.Second)
+			if client.host.Connect(cctx, peer.AddrInfo{ID: nd.host.ID()}) == nil {
+				reached[i] = true
+			}
+			c()
+		}
+		if len(reached) < n && time.Now().After(deadline) {
+			t.Fatalf("reached %d of %d NATed nodes through the relay", len(reached), n)
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+}
