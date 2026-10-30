@@ -4,310 +4,250 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>BitLLM</title>
-<meta name="description" content="BitTorrent for local LLMs. Peer-to-peer LLM inference on GPUs in people's homes: share your model, use everyone else's.">
+<meta name="description" content="BitLLM: a peer-to-peer LLM inference system. Use open models running on other people's GPUs, share your own. Invite-only beta, MIT licensed.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;0,700;1,400&family=JetBrains+Mono:wght@400&display=swap">
 <style>
-/* Layout: a white page with one living picture, the swarm of home GPUs, and
-   plain sentence-led sections underneath. Green = you using the network,
-   orange = machines sharing it. Mono appears only inside real code. */
+/* Layout: the page is a short paper in the line of the Bitcoin whitepaper.
+   One justified column, a centered title block, Figure 1 is the live swarm,
+   references at the end. Color only marks "you" (green) and "GPUs" (orange). */
 :root {
-  --paper: #ffffff; --ink: #0e1110; --sub: #565c59; --soft: #f1f3f2; --line: #e3e6e4;
-  --use: #0f8a46; --share: #e0561c; --link: #c9cfcc;
-  --sans: "Schibsted Grotesk", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  --paper: #ffffff; --ink: #141414; --sub: #555555; --rule: #141414; --box: #f4f4f4;
+  --use: #0d7d3f; --share: #d4521a; --node: #8a8a8a;
+  --serif: "STIX Two Text", "Times New Roman", Times, serif;
   --code: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
-  --paper: #0f1211; --ink: #eef1ef; --sub: #98a09c; --soft: #191d1b; --line: #262b28;
-  --use: #3ddc84; --share: #ff7a3d; --link: #33403a; color-scheme: dark } }
+  --paper: #161616; --ink: #e9e9e6; --sub: #a4a4a0; --rule: #e9e9e6; --box: #222222;
+  --use: #45d483; --share: #ff8149; --node: #77776f; color-scheme: dark } }
 :root[data-theme="dark"] {
-  --paper: #0f1211; --ink: #eef1ef; --sub: #98a09c; --soft: #191d1b; --line: #262b28;
-  --use: #3ddc84; --share: #ff7a3d; --link: #33403a; color-scheme: dark }
+  --paper: #161616; --ink: #e9e9e6; --sub: #a4a4a0; --rule: #e9e9e6; --box: #222222;
+  --use: #45d483; --share: #ff8149; --node: #77776f; color-scheme: dark }
 
 * { box-sizing: border-box; }
-body { background: var(--paper); color: var(--ink); font: 17px/1.6 var(--sans); }
-a { color: inherit; }
-:focus-visible { outline: 2px solid var(--use); outline-offset: 3px; }
-.wrap { max-width: 1120px; margin: 0 auto;
+body { background: var(--paper); color: var(--ink); font: 19px/1.55 var(--serif); }
+a { color: inherit; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+a:hover { color: var(--use); }
+:focus-visible { outline: 2px solid var(--use); outline-offset: 2px; }
+.paper { max-width: 700px; margin: 0 auto; padding-block: 56px 72px;
   padding-left: max(20px, env(safe-area-inset-left, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px)); }
 
-.top { display: flex; align-items: center; gap: 28px; padding-block: 24px; flex-wrap: wrap; }
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 20px; letter-spacing: -.4px; text-decoration: none; }
-.mark { width: 20px; height: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 3px; }
-.mark i { background: var(--ink); } .mark i:first-child { background: var(--use); } .mark i:last-child { background: var(--share); }
-.top nav { margin-left: auto; display: flex; gap: 26px; font-size: 16px; font-weight: 500; flex-wrap: wrap; }
-.top nav a { text-decoration: none; color: var(--sub); }
-.top nav a:hover { color: var(--ink); }
+.titleblock { text-align: center; margin-bottom: 36px; }
+h1 { font-size: clamp(28px, 4.6vw, 38px); line-height: 1.2; font-weight: 700; margin: 0 0 14px; text-wrap: balance; }
+.byline { font-size: 18px; margin: 0 0 4px; text-align: center; }
+.byline + .byline { color: var(--sub); font-size: 16px; }
+.links { margin-top: 18px; font-size: 17px; display: flex; justify-content: center; gap: 8px 22px; flex-wrap: wrap; }
 
-/* hero */
-.hero { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 48px; align-items: center; padding-block: 40px 88px; }
-.kicker { font-size: 19px; font-weight: 700; color: var(--use); margin: 0 0 14px; }
-h1 { font-size: clamp(46px, 6.4vw, 84px); line-height: .98; font-weight: 800; letter-spacing: -.045em; margin: 0 0 24px; text-wrap: balance; }
-.lede { font-size: 21px; line-height: 1.45; color: var(--sub); margin: 0 0 32px; max-width: 27em; }
-.lede strong { color: var(--ink); font-weight: 600; }
-.acts { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
-.btn { display: inline-block; padding: 14px 22px; border-radius: 6px; font-weight: 700; font-size: 17px; text-decoration: none; border: 2px solid var(--ink); }
-.btn.solid { background: var(--ink); color: var(--paper); }
-.btn.solid:hover { background: var(--use); border-color: var(--use); color: #fff; }
-.btn.plain { border-color: transparent; padding-inline: 8px; text-decoration: underline; text-underline-offset: 5px; text-decoration-thickness: 2px; text-decoration-color: var(--use); }
-.beta { margin-top: 22px; font-size: 15px; color: var(--sub); }
-.beta b { color: var(--ink); font-weight: 600; }
+.abstract { margin: 0 auto 36px; max-width: 600px; font-size: 17.5px; text-align: justify; hyphens: auto; }
+.abstract b { font-weight: 700; }
 
-.swarm { position: relative; aspect-ratio: 6 / 5; max-width: 100%; }
-.swarm canvas { width: 100%; height: 100%; display: block; }
-.legend { position: absolute; left: 0; bottom: -8px; display: flex; gap: 6px 16px; font-size: 13px; color: var(--sub); flex-wrap: wrap; }
-.legend span { display: inline-flex; align-items: center; gap: 7px; }
-.legend i { width: 10px; height: 10px; display: inline-block; }
+figure { margin: 0 0 40px; }
+.fig { position: relative; aspect-ratio: 7 / 4; max-width: 100%; }
+.fig canvas { width: 100%; height: 100%; display: block; }
+figcaption { font-size: 16px; color: var(--sub); text-align: center; margin-top: 10px; text-wrap: balance; }
+figcaption b { color: var(--ink); font-weight: 600; }
+.k { display: inline-block; width: 9px; height: 9px; margin: 0 4px 0 2px; vertical-align: 1px; }
 
-/* sections */
-section { padding-block: 72px; }
-section + section { padding-top: 24px; }
-h2 { font-size: clamp(32px, 4vw, 48px); line-height: 1.05; font-weight: 800; letter-spacing: -.035em; margin: 0 0 16px; text-wrap: balance; max-width: 18em; }
-.intro { font-size: 19px; color: var(--sub); margin: 0 0 36px; max-width: 38em; }
-p { max-width: 62ch; }
+h2 { font-size: 23px; font-weight: 700; margin: 44px 0 10px; }
+p { margin: 0 0 14px; text-align: justify; hyphens: auto; }
+.lead { font-variant: small-caps; letter-spacing: .02em; font-weight: 600; }
 
-.start { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 40px; align-items: start; }
-.tabs { display: flex; gap: 24px; margin-bottom: 14px; flex-wrap: wrap; }
-.tabs button { font: 600 17px var(--sans); background: none; border: 0; padding: 4px 0; color: var(--sub); cursor: pointer;
-  border-bottom: 3px solid transparent; }
-.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--use); }
-.code { position: relative; background: var(--soft); border-radius: 8px; padding: 52px 20px 18px;
-  font: 14px/1.75 var(--code); white-space: pre; overflow-x: auto; color: var(--ink); }
-.code .c { color: var(--sub); }
-.copy { position: absolute; top: 12px; right: 12px; font: 600 14px var(--sans); padding: 7px 12px; border-radius: 6px; cursor: pointer;
-  background: var(--paper); color: var(--ink); border: 1.5px solid var(--line); }
-.copy:hover { border-color: var(--ink); }
-.then { margin-top: 26px; font-size: 18px; }
-.then strong { font-weight: 700; }
-.aside { background: var(--soft); border-radius: 12px; padding: 26px 26px 10px; }
-.aside h3 { font-size: 22px; font-weight: 800; letter-spacing: -.02em; margin: 0 0 8px; display: flex; align-items: center; gap: 10px; }
-.aside h3 i { width: 12px; height: 12px; background: var(--share); display: inline-block; }
-.aside p { font-size: 16px; color: var(--sub); }
-.aside .code { background: var(--paper); font-size: 13px; padding-top: 16px; margin-bottom: 16px; }
+.listing { margin: 16px 0 6px; }
+.lrow { display: grid; grid-template-columns: 6.2em minmax(0, 1fr); gap: 6px 14px; align-items: start; margin-bottom: 12px; }
+.lrow > span { font-style: italic; color: var(--sub); padding-top: 9px; font-size: 17px; }
+.code { position: relative; background: var(--box); padding: 10px 64px 10px 14px; font: 13.5px/1.7 var(--code);
+  white-space: pre; overflow-x: auto; min-width: 0; }
+.copy { position: absolute; top: 7px; right: 8px; font: italic 15px var(--serif); background: none; border: 0; color: var(--sub);
+  cursor: pointer; text-decoration: underline; text-underline-offset: 3px; padding: 2px 6px; background: var(--box); }
+.copy:hover { color: var(--ink); }
 
-.rules { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px; margin: 8px 0 28px; }
-.rule::before { content: ""; display: block; width: 14px; height: 14px; background: var(--ink); margin-bottom: 16px; }
-.rule.u::before { background: var(--use); } .rule.s::before { background: var(--share); }
-.rule h3 { font-size: 22px; line-height: 1.2; font-weight: 800; letter-spacing: -.02em; margin: 0 0 10px; }
-.rule p { margin: 0; color: var(--sub); font-size: 16px; }
-.small { font-size: 16px; color: var(--sub); }
+.rules { margin: 14px 0 16px; padding-left: 1.6em; }
+.rules li { margin-bottom: 10px; text-align: justify; padding-left: .3em; }
+.rules li::marker { font-style: italic; color: var(--sub); }
 
-.how { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 30px 56px; }
-.how h3 { font-size: 19px; font-weight: 700; margin: 0 0 6px; }
-.how p { margin: 0; color: var(--sub); font-size: 16px; }
+table { border-collapse: collapse; width: 100%; margin: 14px 0 6px; font-size: 17px; }
+caption { caption-side: top; text-align: center; font-size: 16px; color: var(--sub); padding-bottom: 8px; }
+thead th { border-top: 1.5px solid var(--rule); border-bottom: 1px solid var(--rule); font-weight: 600; text-align: left; padding: 7px 10px 7px 0; }
+tbody td { padding: 7px 10px 7px 0; vertical-align: top; }
+tbody tr:last-child td { border-bottom: 1.5px solid var(--rule); }
+td code, p code, li code { font: 14px var(--code); overflow-wrap: anywhere; }
+.tbl { overflow-x: auto; }
 
-.models { width: 100%; border-collapse: collapse; font-size: 16px; }
-.models td { padding: 16px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
-.models td:first-child { font-weight: 700; padding-right: 28px; width: 46%; overflow-wrap: anywhere; }
-.models td:last-child { color: var(--sub); }
+.refs { padding-left: 2.4em; font-size: 16.5px; margin: 10px 0 0; }
+.refs li { margin-bottom: 8px; }
+.refs li::marker { content: "[" counter(list-item) "]  "; color: var(--sub); }
 
-.know { list-style: none; padding: 0; margin: 0; display: grid; gap: 22px; max-width: 760px; }
-.know li { padding-left: 26px; position: relative; font-size: 17px; }
-.know li::before { content: ""; position: absolute; left: 0; top: 9px; width: 10px; height: 10px; background: var(--share); }
-.know b { font-weight: 700; }
-.know span { color: var(--sub); }
+.end { margin-top: 48px; font-size: 15px; color: var(--sub); text-align: center; }
 
-footer { padding-block: 40px 56px; font-size: 15px; color: var(--sub); display: flex; flex-wrap: wrap; gap: 10px 28px; border-top: 1px solid var(--line); margin-top: 40px; }
-
-@media (max-width: 880px) {
-  .hero, .start { grid-template-columns: minmax(0, 1fr); }
-  .hero { padding-block: 16px 64px; gap: 28px; }
-  .rules, .how { grid-template-columns: minmax(0, 1fr); gap: 28px; }
-  section { padding-block: 52px; }
-  .top nav { gap: 18px; }
+@media (max-width: 560px) {
+  body { font-size: 18px; }
+  .paper { padding-block: 32px 56px; }
+  p, .abstract, .rules li { text-align: left; }
+  .lrow { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .lrow > span { padding-top: 0; }
 }
-@media (max-width: 480px) { .top nav .opt { display: none; } .lede { font-size: 19px; } }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header class="top">
-    <a class="brand" href="#"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>BitLLM</a>
-    <nav>
-      <a href="#start">Get started</a>
-      <a class="opt" href="#access">Access</a>
-      <a href="https://github.com/zengjiajun0623/bitllm/blob/main/JOIN.zh.md">中文</a>
-      <a href="https://github.com/zengjiajun0623/bitllm">GitHub</a>
+<article class="paper">
+  <header class="titleblock">
+    <h1>BitLLM: A Peer-to-Peer<br>LLM Inference System</h1>
+    <p class="byline">bitllm.org</p>
+    <p class="byline">Invite-only beta. Open source, MIT licensed.</p>
+    <nav class="links">
+      <a href="#use">Get started</a>
+      <a href="#share">Share a GPU</a>
+      <a href="https://github.com/zengjiajun0623/bitllm">Source</a>
+      <a href="https://github.com/zengjiajun0623/bitllm/blob/main/JOIN.zh.md">中文说明</a>
     </nav>
   </header>
 
-  <div class="hero">
-    <div>
-      <p class="kicker">BitTorrent for local LLMs</p>
-      <h1>Peer-to-peer LLM inference.</h1>
-      <p class="lede">Big open models run on GPUs in people's homes. BitLLM links them into one peer-to-peer network: <strong>your agent's request goes straight to someone's GPU</strong>, and the tokens stream straight back. No server in the middle, no company to switch it off.</p>
-      <div class="acts">
-        <a class="btn solid" href="#start">Get started</a>
-        <a class="btn plain" href="#share">Share your GPU</a>
-      </div>
-      <p class="beta"><b>Invite-only beta.</b> One binary for macOS, Linux and Windows. MIT licensed.</p>
-    </div>
-    <div class="swarm" role="img" aria-label="Illustration: your request goes peer to peer to one of many home GPUs, which streams tokens straight back">
+  <p class="abstract"><b>Abstract.</b> A purely peer-to-peer system for LLM inference would let anyone use open
+    models running on other people's GPUs, without going through a company that can meter, censor or switch
+    it off. Open-weight models are now good enough, and home hardware fast enough, that the missing piece is
+    the network. BitLLM is a single program that every participant runs. Nodes find each other through a
+    distributed hash table, learn which models are online over gossip, and stream each answer straight from
+    the GPU that produced it, through a relay only until the two sides can connect directly. Servers earn
+    credits through receipts signed by both sides, which any node can recount.</p>
+
+  <figure>
+    <div class="fig" role="img" aria-label="Figure 1: your request travels peer to peer to one of many home GPUs, and tokens stream straight back">
       <canvas id="swarm"></canvas>
-      <div class="legend"><span><i style="background:var(--use)"></i>You</span><span><i style="background:var(--share)"></i>Home GPUs sharing a model</span><span><i style="background:var(--link)"></i>Other nodes</span></div>
     </div>
-  </div>
+    <figcaption><b>Figure 1.</b> Your agent <span class="k" style="background:var(--use)"></span>sends a request to one of the
+      home GPUs <span class="k" style="background:var(--share)"></span>sharing a model, and the tokens stream straight back.
+      Other nodes <span class="k" style="background:var(--node)"></span>relay and route. An illustration, not live data.</figcaption>
+  </figure>
 
-  <section id="start">
-    <h2>Start in one line</h2>
-    <p class="intro">Download and run. It joins the network on its own: no port forwarding, no config file.</p>
-    <div class="start">
-      <div>
-        <div class="tabs" role="tablist" aria-label="Your system">
-          <button type="button" role="tab" aria-selected="true" data-os="mac">macOS</button>
-          <button type="button" role="tab" aria-selected="false" data-os="linux">Linux</button>
-          <button type="button" role="tab" aria-selected="false" data-os="win">Windows</button>
-        </div>
-        <div class="code" id="install"><button class="copy" type="button">Copy</button><span id="cmd"></span></div>
-        <p class="then">Then open <strong>http://127.0.0.1:7778</strong>. Pick a model, copy the setup for Claude Code, Cline, Aider or any OpenAI client, and send a test message.</p>
-      </div>
-      <div class="aside" id="share">
-        <h3><i></i>Share your GPU</h3>
-        <p>Already running vLLM, SGLang, llama.cpp or Ollama? Point BitLLM at it and give the model its network name.</p>
-        <div class="code">./bitllm --upstream http://localhost:8000/v1 \
-  --model your-name=deepseek-v4.1-flash-1017 \
-  --concurrency 2</div>
-        <p>Sharing makes you a contributor: no quota, and 10 invites.</p>
-      </div>
-    </div>
-  </section>
+  <h2 id="use">Using the network</h2>
+  <p>Download the program and run it. It joins through a bootstrap node and needs no port forwarding and no
+    configuration.</p>
+  <div class="listing" id="listing"></div>
+  <p>Then open <a href="http://127.0.0.1:7778">http://127.0.0.1:7778</a> in your browser. The page lists the models
+    online right now, gives copy-paste setup for Claude Code, Cline, Aider or any OpenAI-compatible client, and
+    sends a test message. Your agent talks to <code>127.0.0.1:7778</code>, which speaks both the OpenAI and the
+    Anthropic API, and the program forwards each request to a peer serving that model.</p>
 
-  <section id="access">
-    <h2>How access works</h2>
-    <p class="intro">Three rules. Invites are signed by an Ethereum account and gossiped like everything else, so there is no membership server.</p>
-    <div class="rules">
-      <div class="rule"><h3>You need an invite for a free quota</h3><p>Uninvited nodes are served only when a server is idle, unless its owner opens it to everyone.</p></div>
-      <div class="rule u"><h3>Members get a daily quota on every server</h3><p>Each server owner sets it. The default is 200,000 credits a day.</p></div>
-      <div class="rule s"><h3>Share compute and the limits go away</h3><p>No quota while your nodes serve (last 7 days), and 10 invites instead of 3 once they have.</p></div>
-    </div>
-    <p class="small">Ask a member to invite your address, then link your node to it in the dashboard. Revoking an account also removes everyone it invited.</p>
-  </section>
+  <h2 id="share">Sharing a GPU</h2>
+  <p>If you already run vLLM, SGLang, llama.cpp, Ollama or LM Studio, point BitLLM at it and give the model its
+    network name. Peers reach you through hole punching or a relay, and you choose how many requests to serve at
+    once.</p>
+  <div class="listing"><div class="lrow"><span>Any system</span><div class="code"><button class="copy" type="button">copy</button>./bitllm --upstream http://localhost:8000/v1 \
+  --model your-name=deepseek-v4.1-flash-1017 --concurrency 2</div></div></div>
+  <p>A request for a model you share yourself is answered by your own server and never leaves your machine.</p>
 
-  <section>
-    <h2>Peer to peer, all the way</h2>
-    <p class="intro">Every node runs the same program. Nodes find each other through a DHT, hear which models are online over gossip, and stream answers directly from the GPU to you. Nothing routes your requests.</p>
-    <div class="how">
-      <div><h3>Behind NAT is fine</h3><p>A relay connects you first, then hole punching upgrades to a direct link when the routers allow it.</p></div>
-      <div><h3>Your own model stays local</h3><p>If you share a model, your gateway answers it from your own server. It never leaves your machine.</p></div>
-      <div><h3>Credits for serving</h3><p>Each job ends with a receipt signed by both sides and gossiped to every node. Anyone can recount the totals.</p></div>
-      <div><h3>Busy servers queue you</h3><p>When every server for a model is full, your request waits up to a minute for a free slot.</p></div>
-    </div>
-  </section>
+  <h2 id="access">Access</h2>
+  <p>The beta runs on three rules, inspired by private BitTorrent trackers.</p>
+  <ol class="rules" type="i">
+    <li><span class="lead">An invite gives you a free quota.</span> Uninvited nodes are served only when a server
+      is idle, unless its owner opens it to everyone.</li>
+    <li><span class="lead">Members get a daily quota on every server.</span> Each server owner sets it; the
+      default is 200,000 credits a day.</li>
+    <li><span class="lead">Sharing removes the limits.</span> No quota while your nodes serve (last 7 days), and
+      10 invites instead of 3 once they have.</li>
+  </ol>
+  <p>Invites are signed by an Ethereum account and gossiped like everything else, so there is no membership
+    server. Ask a member to invite your address, then link your node to it from the dashboard. Revoking an
+    account also removes everyone it invited.</p>
 
-  <section>
-    <h2>Models</h2>
-    <p class="intro">One network name means one set of weights. Use these names when you share, or open a pull request to add one.</p>
-    <table class="models">
-      <tr><td>deepseek-v4.1-flash-1017-heretic</td><td>DeepSeek V4.1 Flash, 1017 release, with refusals removed</td></tr>
-      <tr><td>deepseek-v4.1-flash-1017</td><td>The same model, official weights</td></tr>
-    </table>
-  </section>
+  <h2>How the network works</h2>
+  <p><span class="lead">Discovery.</span> Nodes meet through a Kademlia DHT and a gossip topic on which every
+    server announces its models and free slots once every few seconds.</p>
+  <p><span class="lead">Connectivity.</span> Most home machines sit behind NAT. A relay carries the first bytes
+    and hole punching then upgrades the link to a direct connection when the routers allow it. All traffic is
+    encrypted.</p>
+  <p><span class="lead">Credits.</span> After each job the client signs what it received (token counts and a hash
+    of the exact response), the server checks and countersigns it, and the receipt is gossiped to every node, as
+    in BitTorrent's reciprocity <a href="#r2">[2]</a> but publicly countable. Credits have no value yet.</p>
+  <p><span class="lead">Load.</span> When every server for a model is busy, your request waits up to a minute for
+    a free slot instead of failing.</p>
 
-  <section>
-    <h2>Before you use it</h2>
-    <ul class="know">
-      <li><b>The server that answers you reads your prompt.</b> <span>Transport is encrypted, but the machine running the model sees the text. Don't send secrets.</span></li>
-      <li><b>Peers you connect to directly see your IP address.</b> <span>If that matters where you live, run BitLLM behind a VPN.</span></li>
-      <li><b>Receipts don't follow you around.</b> <span>Clients sign with a pseudonym per server that changes every 30 days.</span></li>
-      <li><b>No model verification yet.</b> <span>A node could serve a different model than the name it announces. Spot checks are next.</span></li>
-      <li><b>Credits have no value yet.</b> <span>The counting rules will be published before that changes.</span></li>
-    </ul>
-  </section>
+  <div class="tbl"><table>
+    <caption>Table 1. Network model names. One name means one set of weights.</caption>
+    <thead><tr><th>Network name</th><th>Weights</th></tr></thead>
+    <tbody>
+      <tr><td><code>deepseek-v4.1-flash-1017-heretic</code></td><td>DeepSeek V4.1 Flash, 1017 release, refusals removed</td></tr>
+      <tr><td><code>deepseek-v4.1-flash-1017</code></td><td>The same model, official weights</td></tr>
+    </tbody>
+  </table></div>
 
-  <footer>
-    <span>BitLLM is MIT licensed.</span>
-    <a href="https://github.com/zengjiajun0623/bitllm">Source</a>
-    <a href="https://github.com/zengjiajun0623/bitllm/releases">Releases</a>
-    <a href="https://github.com/zengjiajun0623/bitllm/blob/main/JOIN.zh.md">中文说明</a>
-  </footer>
-</div>
+  <h2>Privacy and limits</h2>
+  <p>The machine that serves a request reads its prompt, as with any inference provider, so do not send secrets.
+    Peers you connect to directly see your IP address; where that matters, run BitLLM behind a VPN. Receipts are
+    signed with a pseudonym per server that changes every 30 days, so the public record cannot follow you across
+    servers. Nothing yet verifies that a node serves the model it names; spot checks are next.</p>
+
+  <h2>References</h2>
+  <ol class="refs">
+    <li>S. Nakamoto, "Bitcoin: A Peer-to-Peer Electronic Cash System," 2008.</li>
+    <li id="r2">B. Cohen, "Incentives Build Robustness in BitTorrent," 2003.</li>
+    <li>P. Maymounkov and D. Mazières, "Kademlia: A Peer-to-Peer Information System Based on the XOR Metric," 2002.</li>
+    <li>libp2p, <a href="https://libp2p.io">libp2p.io</a>.</li>
+  </ol>
+
+  <p class="end"><a href="https://github.com/zengjiajun0623/bitllm">github.com/zengjiajun0623/bitllm</a></p>
+</article>
 
 <script>
 const REL = "https://github.com/zengjiajun0623/bitllm/releases/latest/download/";
-const CMDS = {
-  mac: `curl -fL -o bitllm ${REL}bitllm-darwin-arm64
-chmod +x bitllm && ./bitllm`,
-  linux: `curl -fL -o bitllm ${REL}bitllm-linux-amd64
-chmod +x bitllm && ./bitllm
-<span class="c"># ARM (DGX Spark, Raspberry Pi): use bitllm-linux-arm64</span>`,
-  win: `<span class="c"># PowerShell</span>
-iwr -OutFile bitllm.exe ${REL}bitllm-windows-amd64.exe
-.\\bitllm.exe`,
-};
-const tabs = document.querySelectorAll(".tabs button");
-function show(os) {
-  tabs.forEach(t => t.setAttribute("aria-selected", t.dataset.os === os));
-  document.getElementById("cmd").innerHTML = CMDS[os];
-}
-tabs.forEach(t => t.addEventListener("click", () => show(t.dataset.os)));
-show(/Win/.test(navigator.platform) ? "win" : /Linux/.test(navigator.platform) ? "linux" : "mac");
-
-document.querySelectorAll(".copy").forEach(b => b.addEventListener("click", () => {
-  const box = b.parentElement, text = box.innerText.replace(b.innerText, "").split("\n").filter(l => !l.trim().startsWith("#")).join("\n").trim();
-  const done = () => { b.textContent = "Copied"; setTimeout(() => b.textContent = "Copy", 1400); };
+const rows = [
+  ["macOS", `curl -fL -o bitllm ${REL}bitllm-darwin-arm64\nchmod +x bitllm && ./bitllm`],
+  ["Linux", `curl -fL -o bitllm ${REL}bitllm-linux-amd64\nchmod +x bitllm && ./bitllm`],
+  ["Windows", `iwr -OutFile bitllm.exe ${REL}bitllm-windows-amd64.exe\n.\\bitllm.exe`],
+];
+const esc = s => s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+document.getElementById("listing").innerHTML = rows.map(([os, cmd]) =>
+  `<div class="lrow"><span>${os}</span><div class="code"><button class="copy" type="button">copy</button>${esc(cmd)}</div></div>`).join("") +
+  `<div class="lrow"><span></span><p style="margin:0;font-size:16px;color:var(--sub)">On ARM Linux (DGX Spark, Raspberry Pi) use <code>bitllm-linux-arm64</code>. Windows commands are for PowerShell.</p></div>`;
+document.addEventListener("click", e => {
+  const b = e.target.closest(".copy"); if (!b) return;
+  const box = b.parentElement, text = box.innerText.replace(b.innerText, "").trim();
+  const done = () => { b.textContent = "copied"; setTimeout(() => b.textContent = "copy", 1400); };
   navigator.clipboard.writeText(text).then(done, () => { const r = document.createRange(); r.selectNodeContents(box); getSelection().removeAllRanges(); getSelection().addRange(r); });
-}));
+});
 
-// The swarm: nodes scattered like homes on a map, a few sharing GPUs. You send
-// a request to one of them and tokens stream back. Illustrative, not live data.
+// Figure 1. Homes scattered across a plane, a few sharing GPUs. Illustration.
 (() => {
   const cv = document.getElementById("swarm"), ctx = cv.getContext("2d");
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  let W, H, nodes = [], links = [], you, gpus, flows = [], t0 = performance.now();
-  const col = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-  let rnd = 7; const r = () => (rnd = (rnd * 16807) % 2147483647) / 2147483647;
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  let W, H, nodes, links, you, gpus, t0 = performance.now(), seed;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   function build() {
     const dpr = devicePixelRatio || 1, b = cv.getBoundingClientRect();
     W = b.width; H = b.height; cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    rnd = 7; nodes = [];
-    for (let i = 0; i < 46; i++) nodes.push({ x: 0.06 + r() * 0.88, y: 0.06 + r() * 0.82, kind: "n" });
-    gpus = [3, 11, 19, 27, 34, 41].map(i => (nodes[i].kind = "g", nodes[i]));
-    you = { x: 0.16, y: 0.62, kind: "y" }; nodes.push(you);
+    seed = 11; nodes = [];
+    for (let i = 0; i < 54; i++) nodes.push({ x: .04 + rnd() * .92, y: .07 + rnd() * .86, g: false });
+    gpus = [2, 9, 17, 25, 33, 40, 48].map(i => (nodes[i].g = true, nodes[i]));
+    you = { x: .12, y: .5 }; nodes.push(you);
     links = [];
-    nodes.forEach((a, i) => {
-      const near = nodes.map((b, j) => [j, (a.x - b.x) ** 2 + (a.y - b.y) ** 2]).filter(([j]) => j !== i).sort((p, q) => p[1] - q[1]).slice(0, 2);
-      near.forEach(([j]) => { if (i < j || !links.some(l => l[0] === j && l[1] === i)) links.push([i, j]); });
-    });
-    flows = gpus.slice(0, 3).map((g, k) => ({ g, phase: k / 3 }));
+    nodes.forEach((a, i) => nodes.map((b, j) => [j, (a.x - b.x) ** 2 + ((a.y - b.y) * H / W) ** 2])
+      .filter(([j]) => j !== i).sort((p, q) => p[1] - q[1]).slice(0, 2).forEach(([j]) => links.push([i, j])));
   }
-  function sq(x, y, s, c) { ctx.fillStyle = c; ctx.fillRect(x - s / 2, y - s / 2, s, s); }
+  const dot = (x, y, s, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y, s, 0, 7); ctx.fill(); };
   function frame(now) {
-    const t = still ? 0.35 : (now - t0) / 1000;
-    const cLink = col("--link"), cUse = col("--use"), cShare = col("--share"), cInk = col("--sub");
+    const t = still ? 1.1 : Math.max(0, now - t0) / 1000;
+    const ink = css("--ink"), node = css("--node"), use = css("--use"), share = css("--share");
     ctx.clearRect(0, 0, W, H);
-    ctx.lineWidth = 1; ctx.strokeStyle = cLink;
-    links.forEach(([i, j]) => { const a = nodes[i], b = nodes[j]; ctx.beginPath(); ctx.moveTo(a.x * W, a.y * H); ctx.lineTo(b.x * W, b.y * H); ctx.stroke(); });
-    flows.forEach((f, k) => {
-      const ax = you.x * W, ay = you.y * H, bx = f.g.x * W, by = f.g.y * H;
-      const active = still ? k === 0 : Math.floor(t / 3) % 3 === k;
-      ctx.strokeStyle = active ? cShare : cLink; ctx.lineWidth = active ? 2 : 1; ctx.setLineDash(active ? [] : [3, 5]);
-      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke(); ctx.setLineDash([]);
-      if (active) {
-        const p = (t % 3) / 3;
-        for (let d = 0; d < 7; d++) {
-          const q = (p * 1.6 - d * 0.07);
-          if (q < 0 || q > 1) continue;
-          sq(bx + (ax - bx) * q, by + (ay - by) * q, 5, cShare);
-        }
-        if (p < 0.25) sq(ax + (bx - ax) * (p / 0.25), ay + (by - ay) * (p / 0.25), 6, cUse);
-      }
-    });
-    nodes.forEach(n => {
-      if (n.kind === "n") sq(n.x * W, n.y * H, 6, cInk);
-    });
-    gpus.forEach((g, k) => {
-      const pulse = still ? 0 : (Math.sin(t * 2 + k) + 1) / 2;
-      sq(g.x * W, g.y * H, 15 + pulse * 3, cShare);
-    });
-    sq(you.x * W, you.y * H, 18, cUse);
-    ctx.fillStyle = col("--ink"); ctx.font = "600 13px " + col("--sans");
-    ctx.fillText("you", you.x * W - 12, you.y * H + 26);
+    ctx.strokeStyle = node; ctx.globalAlpha = .45; ctx.lineWidth = .8;
+    links.forEach(([i, j]) => { ctx.beginPath(); ctx.moveTo(nodes[i].x * W, nodes[i].y * H); ctx.lineTo(nodes[j].x * W, nodes[j].y * H); ctx.stroke(); });
+    ctx.globalAlpha = 1;
+    const k = still ? 1 : Math.floor(t / 3.2) % gpus.length, g = gpus[k], p = (t % 3.2) / 3.2;
+    const ax = you.x * W, ay = you.y * H, bx = g.x * W, by = g.y * H;
+    ctx.strokeStyle = ink; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+    if (p < .22) { const q = p / .22; dot(ax + (bx - ax) * q, ay + (by - ay) * q, 4, use); }
+    else for (let d = 0; d < 9; d++) { const q = (p - .22) / .78 * 1.5 - d * .06; if (q > 0 && q < 1) dot(bx + (ax - bx) * q, by + (ay - by) * q, 2.6, share); }
+    nodes.forEach(n => { if (!n.g && n !== you) dot(n.x * W, n.y * H, 2.4, node); });
+    gpus.forEach(n => { ctx.fillStyle = share; ctx.fillRect(n.x * W - 6, n.y * H - 6, 12, 12); });
+    dot(ax, ay, 7, use);
+    ctx.fillStyle = ink; ctx.font = "italic 15px " + css("--serif");
+    ctx.fillText("you", ax - 11, ay + 24);
+    ctx.fillText("GPU", bx + 10, by - 9);
     if (!still) requestAnimationFrame(frame);
   }
   build(); requestAnimationFrame(frame);
   addEventListener("resize", () => { build(); if (still) requestAnimationFrame(frame); });
-  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => still && requestAnimationFrame(frame));
 })();
 </script>
 </body>
