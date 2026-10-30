@@ -1,8 +1,8 @@
-// llmpool: a peer-to-peer network of local LLMs. Every node is the same
+// bitllm: a peer-to-peer network of local LLMs. Every node is the same
 // program: it can share an OpenAI-compatible server with the network and it
 // runs a local gateway that answers from any peer. No coordinator.
 //
-//	llmpool --upstream http://localhost:8080/v1 --bootstrap /ip4/.../p2p/12D3...
+//	bitllm --upstream http://localhost:8080/v1 --bootstrap /ip4/.../p2p/12D3...
 //	curl localhost:7778/v1/models
 package main
 
@@ -44,7 +44,7 @@ func main() {
 	flag.IntVar(&port, "port", 4001, "p2p port, TCP and UDP (QUIC)")
 	flag.IntVar(&wsPort, "ws-port", 0, "also accept libp2p over WebSocket on 127.0.0.1:PORT, for an HTTPS tunnel (Cloudflare Tunnel etc.) in front of a bootstrap node")
 	flag.Var(&announce, "announce", "public multiaddr to advertise, e.g. /dns4/boot.example.com/tcp/443/wss (repeatable)")
-	flag.StringVar(&cfg.DataDir, "data", filepath.Join(home, ".llmpool"), "identity and ledger directory")
+	flag.StringVar(&cfg.DataDir, "data", filepath.Join(home, ".bitllm"), "identity and ledger directory")
 	flag.BoolVar(&cfg.DHTServer, "dht-server", false, "always act as a DHT server (for bootstrap nodes with a public address)")
 	flag.BoolVar(&cfg.MDNS, "mdns", true, "find peers on the local network")
 	flag.BoolVar(&cfg.UPnP, "upnp", true, "ask the router (UPnP/NAT-PMP) to forward the p2p port so peers can reach us directly")

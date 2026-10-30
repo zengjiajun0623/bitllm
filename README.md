@@ -1,4 +1,4 @@
-# llmpool
+# BitLLM
 
 **BitTorrent for local LLMs.** Share your local model, use everyone's.
 
@@ -11,7 +11,7 @@ relay plus hole punching when both sides are behind NAT.
 ## Share a model
 
 ```bash
-./llmpool --upstream http://localhost:8000/v1 \
+./bitllm --upstream http://localhost:8000/v1 \
   --model <your-served-name>=deepseek-v4.1-flash-1017 \
   --concurrency 2 \
   --bootstrap <BOOTSTRAP_MULTIADDR>
@@ -36,7 +36,7 @@ Same name must mean same weights. Add a row (PR or message) before sharing a new
 Every node, sharing or not, has a gateway at `http://127.0.0.1:7778/v1`:
 
 ```bash
-./llmpool --bootstrap <BOOTSTRAP_MULTIADDR>      # use only, share nothing
+./bitllm --bootstrap <BOOTSTRAP_MULTIADDR>      # use only, share nothing
 curl localhost:7778/v1/models
 curl localhost:7778/v1/chat/completions \
   -d '{"model":"deepseek-v4.1-flash-1017","stream":true,"messages":[{"role":"user","content":"hi"}]}'
@@ -45,7 +45,7 @@ curl localhost:7778/status                         # your peer id, connections, 
 
 Point any agent at it: `OPENAI_BASE_URL=http://127.0.0.1:7778/v1`, any API key. If you share
 a model yourself, your gateway answers it from your own server (free, never leaves your machine).
-The response header `X-Llmpool-Peer` says which peer answered.
+The response header `X-Bitllm-Peer` says which peer answered.
 
 ## Credits for serving
 
@@ -58,18 +58,18 @@ whole network. Any node can verify both signatures and recompute everyone's cred
 curl localhost:7778/credits      # credits per serving peer, from every receipt this node has seen
 ```
 
-Receipts are stored in `~/.llmpool/receipts.jsonl`; a new node catches up from its bootstrap
+Receipts are stored in `~/.bitllm/receipts.jsonl`; a new node catches up from its bootstrap
 peers. What credits will be worth is not decided yet. Which receipts count will be published
 before it is: serving yourself through fake clients or serving a model other than the one named
 will not count.
 
 Separately, each node keeps a private ledger of work exchanged with each peer
-(`~/.llmpool/ledger.json`). A peer may take up to `--free-credits` (50,000) more than it gave
+(`~/.bitllm/ledger.json`). A peer may take up to `--free-credits` (50,000) more than it gave
 before your node stops serving it.
 
 ## Run a bootstrap node
 
-Any machine with a public IP: `./llmpool --dht-server --port 4001`, open TCP and UDP 4001.
+Any machine with a public IP: `./bitllm --dht-server --port 4001`, open TCP and UDP 4001.
 It also relays for NATed peers until they hole-punch a direct connection.
 
 ## What you should know
@@ -84,10 +84,10 @@ It also relays for NATed peers until they hole-punch a direct connection.
 
 ```bash
 go test ./...          # discovery, relay-only path, busy queueing, ledger, debt limit
-go build -o llmpool .
-GOOS=darwin GOARCH=arm64 go build -o dist/llmpool-darwin-arm64 .
+go build -o bitllm .
+GOOS=darwin GOARCH=arm64 go build -o dist/bitllm-darwin-arm64 .
 ```
 
-Protocol: `/llmpool/infer/1.0.0` (one JSON request line, one JSON header line, then the upstream
-body verbatim), DHT prefix `/llmpool`, gossip topic `llmpool/announce/1`. The first, centralized
+Protocol: `/bitllm/infer/1.0.0` (one JSON request line, one JSON header line, then the upstream
+body verbatim), DHT prefix `/bitllm`, gossip topic `bitllm/announce/1`. The first, centralized
 Python prototype is in `legacy/`.

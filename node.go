@@ -31,8 +31,8 @@ import (
 )
 
 const (
-	Rendezvous    = "llmpool/v1"
-	AnnounceTopic = "llmpool/announce/1"
+	Rendezvous    = "bitllm/v1"
+	AnnounceTopic = "bitllm/announce/1"
 )
 
 type Config struct {
@@ -128,7 +128,7 @@ func NewNode(ctx context.Context, cfg Config) (*Node, error) {
 		libp2p.EnableRelayService(relay.WithInfiniteLimits()),
 		libp2p.Routing(func(h host.Host) (routing.PeerRouting, error) {
 			var err error
-			n.dht, err = dht.New(h, dht.Mode(mode), dht.ProtocolPrefix("/llmpool"),
+			n.dht, err = dht.New(h, dht.Mode(mode), dht.ProtocolPrefix("/bitllm"),
 				dht.BootstrapPeers(bootstrap...))
 			return n.dht, err
 		}),

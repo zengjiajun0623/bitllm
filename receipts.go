@@ -25,9 +25,9 @@ import (
 // so the record is public and checkable without a chain. Which receipts will
 // count (self-dealing, unverified models) is decided later, from these facts.
 const (
-	ReceiptProto = "/llmpool/receipt/1.0.0"
-	SyncProto    = "/llmpool/receipts-sync/1.0.0"
-	ReceiptTopic = "llmpool/receipts/1"
+	ReceiptProto = "/bitllm/receipt/1.0.0"
+	SyncProto    = "/bitllm/receipts-sync/1.0.0"
+	ReceiptTopic = "bitllm/receipts/1"
 )
 
 type Receipt struct {

@@ -22,7 +22,7 @@ import (
 // write side. The server answers with one JSON header line {status, error},
 // then (if status is 200) the upstream response body verbatim: SSE lines for
 // stream requests, a JSON document otherwise.
-const InferProto = "/llmpool/infer/1.0.0"
+const InferProto = "/bitllm/infer/1.0.0"
 
 const maxRequest = 64 << 20
 
@@ -290,7 +290,7 @@ func writeHead(w http.ResponseWriter, stream bool, served peer.ID) func() {
 		w.Header().Set("Content-Type", "application/json")
 	}
 	if served != "" {
-		w.Header().Set("X-Llmpool-Peer", served.String())
+		w.Header().Set("X-Bitllm-Peer", served.String())
 	}
 	w.WriteHeader(200)
 	f, _ := w.(http.Flusher)

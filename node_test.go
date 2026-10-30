@@ -105,8 +105,8 @@ func TestNetwork(t *testing.T) {
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"world"`) || !strings.Contains(w.Body.String(), "[DONE]") {
 		t.Fatalf("stream: %d %s", w.Code, w.Body)
 	}
-	if w.Header().Get("X-Llmpool-Peer") != server.host.ID().String() {
-		t.Fatalf("served by %q", w.Header().Get("X-Llmpool-Peer"))
+	if w.Header().Get("X-Bitllm-Peer") != server.host.ID().String() {
+		t.Fatalf("served by %q", w.Header().Get("X-Bitllm-Peer"))
 	}
 
 	w = post(client, `{"model":"deepseek-v4.1-flash","messages":[{"role":"user","content":"hi"}]}`)
@@ -167,7 +167,7 @@ func TestNetwork(t *testing.T) {
 
 	// The server's own gateway answers from its own upstream, free.
 	w = post(server, `{"model":"deepseek-v4.1-flash","messages":[]}`)
-	if w.Code != 200 || w.Header().Get("X-Llmpool-Peer") != "" {
+	if w.Code != 200 || w.Header().Get("X-Bitllm-Peer") != "" {
 		t.Fatalf("local: %d %s", w.Code, w.Body)
 	}
 }

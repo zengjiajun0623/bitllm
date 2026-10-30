@@ -1,4 +1,4 @@
-module github.com/zengjiajun0623/llmpool
+module github.com/zengjiajun0623/bitllm
 
 go 1.26.6
 

@@ -51,7 +51,7 @@ func (n *Node) listModels(w http.ResponseWriter, r *http.Request) {
 	sort.Strings(names)
 	data := []map[string]any{}
 	for _, m := range names {
-		data = append(data, map[string]any{"id": m, "object": "model", "owned_by": "llmpool", "nodes": nodes[m]})
+		data = append(data, map[string]any{"id": m, "object": "model", "owned_by": "bitllm", "nodes": nodes[m]})
 	}
 	json.NewEncoder(w).Encode(map[string]any{"object": "list", "data": data})
 }
