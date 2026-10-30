@@ -104,13 +104,19 @@ func NewNode(ctx context.Context, cfg Config) (*Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	var bootstrap []peer.AddrInfo
+	// Several addresses of one peer (tcp, quic...) must become one AddrInfo, or
+	// the same node is dialed, synced and used as a relay once per address.
+	var baddrs []ma.Multiaddr
 	for _, s := range cfg.Bootstrap {
-		ai, err := peer.AddrInfoFromString(s)
+		a, err := ma.NewMultiaddr(s)
 		if err != nil {
 			return nil, fmt.Errorf("bootstrap %q: %w", s, err)
 		}
-		bootstrap = append(bootstrap, *ai)
+		baddrs = append(baddrs, a)
+	}
+	bootstrap, err := peer.AddrInfosFromP2pAddrs(baddrs...)
+	if err != nil {
+		return nil, fmt.Errorf("bootstrap: %w", err)
 	}
 
 	n := &Node{
@@ -130,7 +136,7 @@ func NewNode(ctx context.Context, cfg Config) (*Node, error) {
 		libp2p.EnableHolePunching(),
 		// Public nodes relay for NATed ones until hole punching upgrades the link.
 		// Inference streams are long, so the relay must not cut them off.
-		libp2p.EnableRelayService(relay.WithInfiniteLimits()),
+		libp2p.EnableRelayService(relay.WithResources(relayResources())),
 		libp2p.Routing(func(h host.Host) (routing.PeerRouting, error) {
 			var err error
 			n.dht, err = dht.New(h, dht.Mode(mode), dht.ProtocolPrefix("/bitllm"),
@@ -307,6 +313,17 @@ func (n *Node) Link(owner, name string, t int64, ownerSig string) (*Claim, error
 	b, _ := json.Marshal(c)
 	n.claimTop.Publish(context.Background(), b)
 	return c, nil
+}
+
+// relayResources: no per-circuit time or byte limit (inference streams are
+// long), but bounded slots so a public bootstrap is not an open-ended relay.
+func relayResources() relay.Resources {
+	rc := relay.DefaultResources()
+	rc.Limit = nil
+	rc.MaxReservations = 1024     // NATed peers that can be reached through us
+	rc.MaxReservationsPerPeer = 2 // default 1; 2 tolerates a reconnect overlap
+	rc.MaxCircuits = 64           // open relayed connections per peer
+	return rc
 }
 
 // HandlePeerFound is the mDNS callback.

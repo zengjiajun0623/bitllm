@@ -72,11 +72,24 @@ sleep 4
 
 ID=$(journalctl -u bitllm-boot -n 50 --no-pager | grep -o 'peer id [^ ]*' | tail -1 | awk '{print $3}')
 IP4=$(curl -fsS4 --max-time 5 https://api.ipify.org || true)
+IP6=$(curl -fsS6 --max-time 5 https://api6.ipify.org || true)
 echo
 echo "bootstrap running, peer id $ID"
 echo "back up /var/lib/bitllm/identity.key: the peer id is baked into clients"
 echo
+if [ -z "$IP4" ]; then
+  IP4=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i=1;i<NF;i++) if ($i=="src") print $(i+1)}' || true)
+  echo "could not look up the public IP. ${IP4:+$IP4 is the address of this machine; on Oracle and most clouds it is private, so use the public IP from the cloud console instead.}"
+  echo
+fi
 echo "add these to DefaultBootstrap in main.go (before the boot.bitllm.org entry):"
-[ -n "$IP4" ] && echo "  \"/ip4/$IP4/tcp/$PORT/p2p/$ID\"," && echo "  \"/ip4/$IP4/udp/$PORT/quic-v1/p2p/$ID\","
+if [ -n "$IP4" ]; then
+  echo "  \"/ip4/$IP4/tcp/$PORT/p2p/$ID\","
+  echo "  \"/ip4/$IP4/udp/$PORT/quic-v1/p2p/$ID\","
+fi
+if [ -n "$IP6" ]; then
+  echo "  \"/ip6/$IP6/tcp/$PORT/p2p/$ID\","
+  echo "  \"/ip6/$IP6/udp/$PORT/quic-v1/p2p/$ID\","
+fi
 echo
-echo "check from another machine: bitllm --bootstrap /ip4/$IP4/tcp/$PORT/p2p/$ID"
+echo "check from another machine: bitllm --bootstrap /ip4/${IP4:-PUBLIC_IP}/tcp/$PORT/p2p/$ID"

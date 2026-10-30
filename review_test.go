@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -118,5 +119,26 @@ func TestClamp(t *testing.T) {
 	n.clamp("/completions", b)
 	if _, ok := b["max_tokens"]; ok {
 		t.Fatalf("legacy completions default changed: %v", b)
+	}
+}
+
+// TestBootstrapAddrsMergedPerPeer: tcp and quic addresses of one bootstrap
+// node are one peer, used once as a relay.
+func TestBootstrapAddrsMergedPerPeer(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	boot, err := NewNode(ctx, Config{Listen: []string{"/ip4/127.0.0.1/tcp/0", "/ip4/127.0.0.1/udp/0/quic-v1"},
+		DataDir: t.TempDir(), DHTServer: true, AnnounceEvery: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer boot.host.Close()
+	addrs := boot.Addrs()
+	if len(addrs) < 2 {
+		t.Fatalf("boot addrs %v", addrs)
+	}
+	n := testNode(t, ctx, Config{Bootstrap: addrs})
+	if len(n.relays) != 1 || len(n.relays[0].Addrs) != len(addrs) {
+		t.Fatalf("relays %+v", n.relays)
 	}
 }
