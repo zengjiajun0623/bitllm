@@ -52,6 +52,8 @@ type Config struct {
 	FreeDaily        int64             // credits a member may use per UTC day on this server; contributors are unlimited
 	Roots            []string          // accounts at the top of the invite tree; none = membership off
 	Open             bool              // serve uninvited nodes like members (any free slot, quota per node)
+	OpenSlots        int               // most slots uninvited nodes may hold on an open server; 0 = half
+	OpenDaily        int64             // credits all uninvited nodes together may use per UTC day on an open server; 0 = no limit
 	MaxTokens        int               // cap on new tokens per request we serve; 0 = none
 	AnnounceEvery    time.Duration     //
 }
@@ -96,6 +98,7 @@ type Node struct {
 	relays       []peer.AddrInfo // bootstrap nodes, which also relay
 	http         *http.Client
 	inflight     atomic.Int32
+	openInflight atomic.Int32 // slots held by uninvited nodes on an open server
 
 	mu    sync.Mutex
 	peers map[peer.ID]*peerInfo

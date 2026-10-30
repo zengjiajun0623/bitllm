@@ -74,6 +74,8 @@ func main() {
 	flag.IntVar(&cfg.MaxTokens, "max-tokens", 32768, "most new tokens a peer may ask for in one request (0: no limit)")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.BoolVar(&cfg.Open, "open", false, "serve uninvited nodes like members (any free slot, --free-daily per node), not only when idle")
+	flag.IntVar(&cfg.OpenSlots, "open-slots", 0, "with --open: most slots uninvited nodes may hold at once (default: half of --concurrency, at least 1)")
+	flag.Int64Var(&cfg.OpenDaily, "open-daily", 2_000_000, "with --open: credits all uninvited nodes together may use per UTC day; after that they are served only when idle (0: no limit)")
 	flag.Int64Var(&cfg.FreeDaily, "free-daily", 200_000, "credits each member may use per UTC day on this server (contributors: no limit; 0: no limit)")
 	flag.Parse()
 	if *showVersion {

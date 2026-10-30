@@ -265,12 +265,13 @@ func (n *Node) handleInfer(s network.Stream) {
 		reply(400, "bad request")
 		return
 	}
-	status, msg, quotaKey := n.admit(remote, time.Now())
+	status, msg, tk := n.admit(remote, time.Now())
 	if status != 0 {
 		reply(status, msg)
 		return
 	}
-	defer n.inflight.Add(-1)
+	var m meter
+	defer func() { n.done(tk, m.credits(), time.Now()) }()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel() // a failed write to the peer stops the upstream generation too
@@ -282,12 +283,8 @@ func (n *Node) handleInfer(s network.Stream) {
 	}
 	defer resp.Body.Close()
 	reply(200, "")
-	var m meter
 	pipe(s, nil, resp.Body, stream, &m)
 	n.ledger.Served(remote, m.credits())
-	if quotaKey != "" {
-		n.quota.add(quotaKey, m.credits(), time.Now())
-	}
 	if req.Job != "" {
 		var model struct{ Model string }
 		json.Unmarshal(req.Body, &model)

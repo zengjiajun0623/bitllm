@@ -125,9 +125,26 @@ const (
 	msgQuotaSpent = "daily free quota on this server used up. Share a model to become a contributor (no quota), or try again after 00:00 UTC"
 )
 
-// admit takes a serving slot for remote, or says why not. key is what the job
-// is counted against in the daily quota ("" when it is not counted).
-func (n *Node) admit(remote peer.ID, now time.Time) (status int, msg, key string) {
+// ticket is a taken serving slot and what the job will be charged to.
+type ticket struct {
+	key  string // daily quota key, "" when not counted (contributors, idle-only uninvited)
+	open bool   // an uninvited node served because the server is --open
+}
+
+const openPool = "open-pool" // quota key shared by all uninvited nodes on an open server
+
+// openSlots is how many slots uninvited nodes may hold at once on an open
+// server, so members and contributors always find room.
+func (n *Node) openSlots() int32 {
+	if n.cfg.OpenSlots > 0 {
+		return int32(min(n.cfg.OpenSlots, n.cfg.Concurrency))
+	}
+	return int32(max(1, n.cfg.Concurrency/2))
+}
+
+// admit takes a serving slot for remote, or says why not. The caller must
+// call done with the ticket when the job ends.
+func (n *Node) admit(remote peer.ID, now time.Time) (status int, msg string, t ticket) {
 	account := n.accountOf(remote)
 	member, contributor := true, false
 	if n.members.Enabled() {
@@ -135,33 +152,56 @@ func (n *Node) admit(remote peer.ID, now time.Time) (status int, msg, key string
 		member = account != "" && ms.Member[account]
 		contributor = member && ms.Contributors[account]
 	}
-	if !member && !n.cfg.Open {
+	// An open server serves uninvited nodes on spare slots, while the shared
+	// pool for all of them lasts. Peer ids are free, so the per-node quota
+	// alone would not bound it.
+	open := !member && n.cfg.Open && (n.cfg.OpenDaily <= 0 || n.quota.used(openPool, now) < n.cfg.OpenDaily)
+	if !member && !open {
 		if n.inflight.Add(1) > 1 { // idle means nothing else is running
 			n.inflight.Add(-1)
-			return 429, msgUninvited, ""
+			return 429, msgUninvited, t
 		}
-		return 0, "", ""
+		return 0, "", t
 	}
-	key = account
-	if !member { // an open server treats uninvited nodes like members, per node
-		key = ""
-	}
-	if key == "" { // membership off and no account: count per node
+	key := account
+	if !member || key == "" { // uninvited on an open server, or membership off without an account
 		key = "node:" + remote.String()
 	}
 	// Checked before the job and charged after, so parallel jobs started just
 	// under the quota can overshoot it by at most concurrency x max-tokens.
 	if !contributor && n.cfg.FreeDaily > 0 && n.quota.used(key, now) >= n.cfg.FreeDaily {
-		return 429, msgQuotaSpent, ""
+		return 429, msgQuotaSpent, t
 	}
-	if contributor {
-		key = ""
+	if open {
+		if n.openInflight.Add(1) > n.openSlots() {
+			n.openInflight.Add(-1)
+			return 429, msgUninvited, t
+		}
 	}
 	if n.inflight.Add(1) > int32(n.cfg.Concurrency) {
 		n.inflight.Add(-1)
-		return 429, msgBusy, ""
+		if open {
+			n.openInflight.Add(-1)
+		}
+		return 429, msgBusy, t
 	}
-	return 0, "", key
+	if !contributor {
+		t.key = key
+	}
+	t.open = open
+	return 0, "", t
+}
+
+// done releases a ticket's slot and charges the job's credits.
+func (n *Node) done(t ticket, credits int64, now time.Time) {
+	n.inflight.Add(-1)
+	if t.open {
+		n.openInflight.Add(-1)
+		n.quota.add(openPool, credits, now)
+	}
+	if t.key != "" {
+		n.quota.add(t.key, credits, now)
+	}
 }
 
 // isBusy reports whether a refusal is temporary, worth waiting out.

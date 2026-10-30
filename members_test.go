@@ -195,12 +195,11 @@ func TestAccessRules(t *testing.T) {
 	release := func() { n.inflight.Add(-1) }
 
 	// Rule 2: a member is served until the daily quota, then refused.
-	s, _, key := n.admit(memberNode, now)
-	if s != 0 || key != member.addr {
-		t.Fatalf("member refused: %d %q", s, key)
+	s, _, tk := n.admit(memberNode, now)
+	if s != 0 || tk.key != member.addr {
+		t.Fatalf("member refused: %d %+v", s, tk)
 	}
-	release()
-	n.quota.add(key, 30, now)
+	n.done(tk, 30, now) // uses up the quota
 	if s, msg, _ := n.admit(memberNode, now); s != 429 || msg != msgQuotaSpent {
 		t.Fatalf("member over quota: %d %s", s, msg)
 	}
@@ -211,9 +210,9 @@ func TestAccessRules(t *testing.T) {
 
 	// Rule 3: a contributor has no quota.
 	n.quota.add(contrib.addr, 1_000_000, now)
-	s, _, key = n.admit(contribNode, now)
-	if s != 0 || key != "" {
-		t.Fatalf("contributor: %d %q", s, key)
+	s, _, tk = n.admit(contribNode, now)
+	if s != 0 || tk.key != "" {
+		t.Fatalf("contributor: %d %+v", s, tk)
 	}
 	release()
 
@@ -266,30 +265,56 @@ func TestInviteGossipAndSync(t *testing.T) {
 	}
 }
 
-// TestOpenServer: --open serves uninvited nodes on any free slot, with the
-// daily quota counted per node.
+// TestOpenServer: --open serves uninvited nodes on spare slots (at most
+// OpenSlots of them, so members always find room), with a per-node quota and
+// a shared daily pool for all uninvited nodes together.
 func TestOpenServer(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	root := newEthKey(t)
-	n := testNode(t, ctx, Config{Roots: []string{root.addr}, Open: true, FreeDaily: 30, Concurrency: 2})
-	a, b := randomPeer(t), randomPeer(t)
+	root, member := newEthKey(t), newEthKey(t)
+	n := testNode(t, ctx, Config{Roots: []string{root.addr}, Open: true, OpenSlots: 2, OpenDaily: 100,
+		FreeDaily: 30, Concurrency: 3})
+	n.members.add(root.invite(member.addr, 1))
+	memberNode, _ := claimNode(t, n, member)
+	a, b, c := randomPeer(t), randomPeer(t), randomPeer(t)
 	now := time.Now()
-	s1, _, k1 := n.admit(a, now)
-	s2, _, _ := n.admit(b, now)
-	if s1 != 0 || s2 != 0 || k1 != "node:"+a.String() {
-		t.Fatalf("open server refused uninvited on free slots: %d %d %q", s1, s2, k1)
+
+	s1, _, ta := n.admit(a, now)
+	s2, _, tb := n.admit(b, now)
+	if s1 != 0 || s2 != 0 || ta.key != "node:"+a.String() || !ta.open {
+		t.Fatalf("open server refused uninvited on spare slots: %d %d %+v", s1, s2, ta)
 	}
-	if s, msg, _ := n.admit(a, now); s != 429 || !isBusy(s, msg) {
-		t.Fatalf("admitted past concurrency: %d %s", s, msg)
+	// The third slot is kept for members.
+	if s, msg, _ := n.admit(c, now); s != 429 || msg != msgUninvited {
+		t.Fatalf("uninvited took a reserved slot: %d %s", s, msg)
 	}
-	n.inflight.Add(-2)
-	n.quota.add(k1, 30, now)
+	s, _, tm := n.admit(memberNode, now)
+	if s != 0 || tm.open {
+		t.Fatalf("member refused the reserved slot: %d", s)
+	}
+	n.done(tm, 0, now)
+	n.done(tb, 0, now)
+
+	// Per-node quota: a has used 30, b has not.
+	n.done(ta, 30, now)
 	if s, msg, _ := n.admit(a, now); s != 429 || msg != msgQuotaSpent {
 		t.Fatalf("per-node quota not applied: %d %s", s, msg)
 	}
-	if s, _, _ := n.admit(b, now); s != 0 {
+	s, _, tb = n.admit(b, now)
+	if s != 0 {
 		t.Fatal("one node's quota limited another")
 	}
-	n.inflight.Add(-1)
+	// The shared pool (100) runs out after 30 + 70 = 100: fresh ids get idle-only.
+	n.done(tb, 70, now)
+	s, _, tc := n.admit(c, now) // idle server: served, but not as open
+	if s != 0 || tc.open {
+		t.Fatalf("pool spent: want idle-only service, got %d %+v", s, tc)
+	}
+	if s, msg, _ := n.admit(randomPeer(t), now); s != 429 || msg != msgUninvited {
+		t.Fatalf("pool spent and busy: want refusal, got %d %s", s, msg)
+	}
+	n.done(tc, 0, now)
+	if n.inflight.Load() != 0 || n.openInflight.Load() != 0 {
+		t.Fatalf("slots leaked: %d %d", n.inflight.Load(), n.openInflight.Load())
+	}
 }
