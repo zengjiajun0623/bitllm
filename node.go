@@ -209,11 +209,12 @@ func NewNode(ctx context.Context, cfg Config) (*Node, error) {
 		return nil, err
 	}
 	n.claims = OpenClaims(filepath.Join(cfg.DataDir, "claims.json"))
-	n.members = OpenMembers(filepath.Join(cfg.DataDir, "members.json"), cfg.Roots)
 	n.quota = OpenQuota(filepath.Join(cfg.DataDir, "quota.json"))
 	if n.receipts, err = OpenReceipts(filepath.Join(cfg.DataDir, "receipts.jsonl"), key, n.host.ID()); err != nil {
 		return nil, err
 	}
+	// After receipts and claims: replaying saved invites needs to know who served.
+	n.members = OpenMembers(filepath.Join(cfg.DataDir, "members.json"), cfg.Roots, n.servedSets)
 	n.host.SetStreamHandler(ReceiptProto, n.handleReceipt)
 	n.host.SetStreamHandler(SyncProto, n.handleSync)
 
@@ -247,7 +248,7 @@ func NewNode(ctx context.Context, cfg Config) (*Node, error) {
 		if json.Unmarshal(msg.Data, &it) != nil || !n.memRate.allow(msg.GetFrom(), time.Now()) {
 			return false
 		}
-		return (it.Invite != nil && it.Invite.Valid()) || (it.Revoke != nil && it.Revoke.Valid())
+		return n.members.known(it) || n.members.check(it) == nil
 	})
 	if n.memTop, err = ps.Join(MembersTopic); err != nil {
 		return nil, err

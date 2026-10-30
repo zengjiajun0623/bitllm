@@ -3,10 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -69,7 +69,7 @@ func (n *Node) memberSet() *MemberSet {
 	if n.access != nil && time.Since(n.accessAt) < 10*time.Second {
 		return n.access
 	}
-	n.access, n.accessAt = n.members.Compute(n.contributors(time.Now())), time.Now()
+	n.access, n.accessAt = n.members.Compute(), time.Now()
 	return n.access
 }
 
@@ -80,25 +80,25 @@ func (n *Node) invalidateMembers() {
 	n.accessMu.Unlock()
 }
 
-// contributors are the accounts owning a node that served a job (has a
-// receipt as server) within the contributor window.
-func (n *Node) contributors(now time.Time) map[string]bool {
-	since := now.Add(-contributorWindow).Unix()
+// servedSets are the accounts owning a node that has a receipt as server:
+// ever (10 invites) and within the contributor window (no quota).
+func (n *Node) servedSets() (ever, recent map[string]bool) {
+	since := time.Now().Add(-contributorWindow).Unix()
 	n.receipts.mu.Lock()
-	servers := map[string]bool{}
+	servers := map[string]bool{} // node -> served recently
 	for _, sr := range n.receipts.all {
-		if sr.Receipt.TS >= since {
-			servers[sr.Receipt.Server] = true
-		}
+		r := sr.Receipt
+		servers[r.Server] = servers[r.Server] || r.TS >= since
 	}
 	n.receipts.mu.Unlock()
-	out := map[string]bool{}
-	for s := range servers {
+	ever, recent = map[string]bool{}, map[string]bool{}
+	for s, rec := range servers {
 		if c, ok := n.claims.get(s); ok {
-			out[c.Owner] = true
+			ever[c.Owner] = true
+			recent[c.Owner] = recent[c.Owner] || rec
 		}
 	}
-	return out
+	return ever, recent
 }
 
 // accountOf is the account that owns node p, or "".
@@ -137,6 +137,8 @@ func (n *Node) admit(remote peer.ID, now time.Time) (status int, msg, key string
 	if key == "" { // membership off and no account: count per node
 		key = "node:" + remote.String()
 	}
+	// Checked before the job and charged after, so parallel jobs started just
+	// under the quota can overshoot it by at most concurrency x max-tokens.
 	if !contributor && n.cfg.FreeDaily > 0 && n.quota.used(key, now) >= n.cfg.FreeDaily {
 		return 429, msgQuotaSpent, ""
 	}
@@ -226,22 +228,12 @@ func (n *Node) membersPost(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, 400, err.Error())
 		return
 	}
-	if i := it.Invite; i != nil && n.members.Enabled() {
-		ms := n.memberSet()
-		switch lim := ms.InviteLimit(i.Inviter); {
-		case !ms.Member[i.Inviter]:
-			jsonErr(w, 400, checksumAddress(i.Inviter)+" is not a member, so its invites do not count")
-			return
-		case lim >= 0 && ms.Used[i.Inviter] >= lim:
-			jsonErr(w, 400, fmt.Sprintf("%s has used all %d invites", checksumAddress(i.Inviter), lim))
-			return
-		case ms.Member[i.Invitee]:
-			jsonErr(w, 400, checksumAddress(i.Invitee)+" is already a member")
-			return
-		}
+	if err := n.members.check(it); err != nil {
+		jsonErr(w, 400, err.Error())
+		return
 	}
 	if !n.publishMember(it) {
-		jsonErr(w, 400, "invalid or already known (check the signature, addresses and the root list)")
+		jsonErr(w, 400, "already known")
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]any{"ok": true})
@@ -255,4 +247,45 @@ func sigOf(it memberItem) string {
 		return it.Revoke.Sig
 	}
 	return ""
+}
+
+// membersList shows every member with who invited it and how much its nodes
+// served lately, so a root can spot a receipt farm and revoke it.
+func (n *Node) membersList(w http.ResponseWriter, r *http.Request) {
+	ms := n.memberSet()
+	since := time.Now().Add(-contributorWindow).Unix()
+	jobs := map[string]int{}
+	n.receipts.mu.Lock()
+	for _, sr := range n.receipts.all {
+		if sr.Receipt.TS >= since {
+			jobs[sr.Receipt.Server]++
+		}
+	}
+	n.receipts.mu.Unlock()
+	perAccount := map[string]int{}
+	for node, j := range jobs {
+		if c, ok := n.claims.get(node); ok {
+			perAccount[c.Owner] += j
+		}
+	}
+	type row struct {
+		Account     string `json:"account"`
+		InvitedBy   string `json:"invited_by,omitempty"`
+		Root        bool   `json:"root,omitempty"`
+		Sharer      bool   `json:"sharer"`
+		Contributor bool   `json:"contributor"`
+		Invited     int    `json:"invited"`
+		Jobs7d      int    `json:"jobs_7d"`
+	}
+	out := []row{}
+	for a := range ms.Member {
+		rw := row{Account: checksumAddress(a), Root: ms.roots[a], Sharer: ms.Sharers[a],
+			Contributor: ms.Contributors[a], Invited: ms.Used[a], Jobs7d: perAccount[a]}
+		if inv := ms.InvitedBy[a]; inv != "" {
+			rw.InvitedBy = checksumAddress(inv)
+		}
+		out = append(out, rw)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Jobs7d > out[j].Jobs7d })
+	json.NewEncoder(w).Encode(out)
 }

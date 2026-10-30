@@ -78,8 +78,8 @@ func (i *Invite) Valid() bool {
 		i.Time <= time.Now().Add(10*time.Minute).Unix() && signedBy(i.Message(), i.Sig, i.Inviter)
 }
 
-// Revoke is a root removing an account: it loses membership, and invites it
-// signs from then on are invalid. Accounts it invited before stay members.
+// Revoke is a root removing an account. It loses membership and so does
+// everyone it invited, down the tree, unless someone else invited them too.
 type Revoke struct {
 	Account string `json:"account"`
 	Root    string `json:"root"`
@@ -102,40 +102,124 @@ type memberItem struct {
 	Revoke *Revoke `json:"revoke,omitempty"`
 }
 
-// Members stores invites and revocations and derives the member set.
+// Members stores invites and revocations and derives the member set. It only
+// stores (and so only forwards) an invite that counts at the time it arrives:
+// from a member with invites left, for an account that is not a member yet.
+// Signing keys are free, so storing every validly signed invite would let
+// outsiders fill the store; this way it holds at most members x 10 invites.
 type Members struct {
 	mu      sync.Mutex
 	path    string
 	roots   map[string]bool
 	invites map[string]Invite // by id
-	revokes map[string]Revoke // by account, earliest valid
+	revokes map[string]Revoke // by account
+	// served reports which accounts have ever served a job and which did in
+	// the contributor window. Set by the node; nil means nobody has.
+	served func() (ever, recent map[string]bool)
 }
 
-func OpenMembers(path string, roots []string) *Members {
-	m := &Members{path: path, roots: map[string]bool{}, invites: map[string]Invite{}, revokes: map[string]Revoke{}}
+// OpenMembers loads the store. Saved items are replayed through the same
+// checks as new ones (revocations first, then invites in time order), so a
+// store written by an older or buggy version cannot carry junk forward.
+func OpenMembers(path string, roots []string, served func() (ever, recent map[string]bool)) *Members {
+	m := &Members{path: path, roots: map[string]bool{}, invites: map[string]Invite{}, revokes: map[string]Revoke{}, served: served}
 	for _, r := range roots {
 		m.roots[strings.ToLower(r)] = true
 	}
 	if b, err := os.ReadFile(path); err == nil {
 		var items []memberItem
 		if json.Unmarshal(b, &items) == nil {
+			sortItems(items)
 			for _, it := range items {
-				m.addLocked(it)
+				m.add(it)
 			}
 		}
 	}
 	return m
 }
 
+// sortItems orders revocations first, then invites by time, which is the order
+// in which they can be checked (an inviter's own invite before the ones it signs).
+func sortItems(items []memberItem) {
+	key := func(it memberItem) (int, int64, string) {
+		if it.Revoke != nil {
+			return 0, it.Revoke.Time, it.Revoke.Account
+		}
+		return 1, it.Invite.Time, it.Invite.id()
+	}
+	sort.SliceStable(items, func(a, b int) bool {
+		ka, ta, ia := key(items[a])
+		kb, tb, ib := key(items[b])
+		if ka != kb {
+			return ka < kb
+		}
+		if ta != tb {
+			return ta < tb
+		}
+		return ia < ib
+	})
+}
+
 // Enabled reports whether membership is in force (some root is configured).
 func (m *Members) Enabled() bool { return len(m.roots) > 0 }
 
-// add stores an invite or revocation if valid and new; it reports whether it did.
+// check says why an item would not be stored, or nil if it would.
+func (m *Members) check(it memberItem) error {
+	switch {
+	case it.Invite != nil:
+		i := it.Invite
+		if !i.Valid() {
+			return fmt.Errorf("invalid invite signature or addresses")
+		}
+		if !m.Enabled() {
+			return nil
+		}
+		ms := m.Compute()
+		switch lim := ms.InviteLimit(i.Inviter); {
+		case !ms.Member[i.Inviter]:
+			return fmt.Errorf("%s is not a member, so its invites do not count", checksumAddress(i.Inviter))
+		case lim >= 0 && ms.Used[i.Inviter] >= lim:
+			return fmt.Errorf("%s has used all %d invites", checksumAddress(i.Inviter), lim)
+		case ms.Member[i.Invitee]:
+			return fmt.Errorf("%s is already a member", checksumAddress(i.Invitee))
+		case ms.revoked[i.Invitee]:
+			return fmt.Errorf("%s was revoked by a root", checksumAddress(i.Invitee))
+		}
+		return nil
+	case it.Revoke != nil:
+		r := it.Revoke
+		if !r.Valid() || !m.roots[r.Root] {
+			return fmt.Errorf("only a root can revoke")
+		}
+		if m.roots[r.Account] {
+			return fmt.Errorf("a root cannot be revoked")
+		}
+		return nil
+	}
+	return fmt.Errorf("empty item")
+}
+
+// add stores an invite or revocation if it passes check and is new; it
+// reports whether it did.
 func (m *Members) add(it memberItem) bool {
+	if m.check(it) != nil {
+		return false
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if !m.addLocked(it) {
-		return false
+	switch {
+	case it.Invite != nil:
+		i := *it.Invite
+		if _, ok := m.invites[i.id()]; ok || len(m.invites) >= maxInvites {
+			return false
+		}
+		m.invites[i.id()] = i
+	case it.Revoke != nil:
+		r := *it.Revoke
+		if _, ok := m.revokes[r.Account]; ok {
+			return false
+		}
+		m.revokes[r.Account] = r
 	}
 	b, _ := json.Marshal(m.itemsLocked())
 	tmp := m.path + ".tmp"
@@ -143,32 +227,6 @@ func (m *Members) add(it memberItem) bool {
 		os.Rename(tmp, m.path)
 	}
 	return true
-}
-
-func (m *Members) addLocked(it memberItem) bool {
-	switch {
-	case it.Invite != nil:
-		i := *it.Invite
-		if !i.Valid() || len(m.invites) >= maxInvites {
-			return false
-		}
-		if old, ok := m.invites[i.id()]; ok && old.Time <= i.Time {
-			return false
-		}
-		m.invites[i.id()] = i
-		return true
-	case it.Revoke != nil:
-		r := *it.Revoke
-		if !r.Valid() || !m.roots[r.Root] {
-			return false
-		}
-		if old, ok := m.revokes[r.Account]; ok && old.Time <= r.Time {
-			return false
-		}
-		m.revokes[r.Account] = r
-		return true
-	}
-	return false
 }
 
 func (m *Members) itemsLocked() []memberItem {
@@ -179,9 +237,27 @@ func (m *Members) itemsLocked() []memberItem {
 	for _, r := range m.revokes {
 		out = append(out, memberItem{Revoke: &r})
 	}
+	sortItems(out)
 	return out
 }
 
+// known reports whether exactly this item is already stored. Gossip checks
+// a node's own messages too, and re-forwarding a known item is harmless.
+func (m *Members) known(it memberItem) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	switch {
+	case it.Invite != nil:
+		old, ok := m.invites[it.Invite.id()]
+		return ok && old == *it.Invite
+	case it.Revoke != nil:
+		old, ok := m.revokes[it.Revoke.Account]
+		return ok && old == *it.Revoke
+	}
+	return false
+}
+
+// items returns everything stored, in replay order.
 func (m *Members) items() []memberItem {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -192,41 +268,52 @@ func (m *Members) items() []memberItem {
 type MemberSet struct {
 	Member       map[string]bool
 	InvitedBy    map[string]string
-	Used         map[string]int // invites used
-	Contributors map[string]bool
+	Used         map[string]int  // invites used
+	Sharers      map[string]bool // ever served a job: 10 invites
+	Contributors map[string]bool // served in the contributor window: no quota
 	roots        map[string]bool
+	revoked      map[string]bool
 }
 
 // InviteLimit is how many accounts a member may invite; -1 means no limit.
+// Having served once is enough for 10, so the limit never drops later and
+// invites already made never become invalid.
 func (s *MemberSet) InviteLimit(a string) int {
 	switch {
 	case s.roots[a]:
 		return -1
 	case !s.Member[a]:
 		return 0
-	case s.Contributors[a]:
+	case s.Sharers[a]:
 		return contributorInvites
 	}
 	return memberInvites
 }
 
 // Compute derives the member set. Invites apply in time order; one counts
-// only if its inviter was already a member, had not been revoked when it
-// signed, and was under its invite limit. The first valid invite of an account
-// wins. contributors are the accounts that served a job recently.
-func (m *Members) Compute(contributors map[string]bool) *MemberSet {
+// only if its inviter was already a member and under its invite limit; the
+// first such invite of an account wins. A revoked account counts as never
+// invited and its invites count for nothing, so revoking an account also
+// removes everyone it brought in (unless someone else invited them too).
+func (m *Members) Compute() *MemberSet {
 	m.mu.Lock()
 	invites := make([]Invite, 0, len(m.invites))
 	for _, i := range m.invites {
 		invites = append(invites, i)
 	}
-	revokedAt := map[string]int64{}
-	for a, r := range m.revokes {
-		revokedAt[a] = r.Time
+	revoked := map[string]bool{}
+	for a := range m.revokes {
+		if !m.roots[a] {
+			revoked[a] = true
+		}
 	}
-	roots := m.roots
+	roots, served := m.roots, m.served
 	m.mu.Unlock()
 
+	ever, recent := map[string]bool{}, map[string]bool{}
+	if served != nil {
+		ever, recent = served()
+	}
 	sort.Slice(invites, func(a, b int) bool {
 		if invites[a].Time != invites[b].Time {
 			return invites[a].Time < invites[b].Time
@@ -234,15 +321,12 @@ func (m *Members) Compute(contributors map[string]bool) *MemberSet {
 		return invites[a].id() < invites[b].id()
 	})
 	s := &MemberSet{Member: map[string]bool{}, InvitedBy: map[string]string{}, Used: map[string]int{},
-		Contributors: contributors, roots: roots}
+		Sharers: ever, Contributors: recent, roots: roots, revoked: revoked}
 	for r := range roots {
 		s.Member[r] = true
 	}
 	for _, i := range invites {
-		if s.Member[i.Invitee] || !s.Member[i.Inviter] {
-			continue
-		}
-		if t, ok := revokedAt[i.Inviter]; ok && i.Time >= t && !roots[i.Inviter] {
+		if s.Member[i.Invitee] || !s.Member[i.Inviter] || revoked[i.Inviter] || revoked[i.Invitee] {
 			continue
 		}
 		if lim := s.InviteLimit(i.Inviter); lim >= 0 && s.Used[i.Inviter] >= lim {
@@ -251,11 +335,6 @@ func (m *Members) Compute(contributors map[string]bool) *MemberSet {
 		s.Used[i.Inviter]++
 		s.Member[i.Invitee] = true
 		s.InvitedBy[i.Invitee] = i.Inviter
-	}
-	for a := range revokedAt {
-		if !roots[a] {
-			delete(s.Member, a)
-		}
 	}
 	return s
 }

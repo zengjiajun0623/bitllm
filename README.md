@@ -90,8 +90,10 @@ Invite-only beta. Three rules:
 2. A member gets a daily free quota on each server (`--free-daily`, set by the server owner; default 200,000 credits).
 3. Share compute and you're a contributor: no quota, and 10 invites instead of 3.
 
-A member is the root account or anyone a member invited. A contributor is an account whose node
-served a job in the last 7 days. Invites are signed with an Ethereum account and gossiped; every
+A member is the root account or anyone a member invited. Once your nodes have served a job you
+have 10 invites for good; while they have served one in the last 7 days you have no quota. A root
+can revoke an account, which also removes everyone it invited (they can be invited again by
+someone else). Invites are signed with an Ethereum account and gossiped; every
 node computes the same member set, so there is no membership server. Servers look up the
 requesting node's account through its claim (below).
 

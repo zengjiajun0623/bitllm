@@ -37,6 +37,7 @@ func (n *Node) Gateway() http.Handler {
 	mux.HandleFunc("POST /account/message", n.accountMessage)
 	mux.HandleFunc("POST /account/link", n.accountLink)
 	mux.HandleFunc("GET /members/me", n.membersMe)
+	mux.HandleFunc("GET /members", n.membersList)
 	mux.HandleFunc("POST /members", n.membersPost)
 	mux.HandleFunc("GET /credits", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(n.creditsTable())
