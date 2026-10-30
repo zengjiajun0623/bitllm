@@ -35,11 +35,13 @@ jobs:
           curl -s localhost:7778/credits; echo
           grep -q "^HTTP/1.1 200" headers.txt
           # Four newcomers at once: all must be served.
+          pids=""
           for i in 1 2 3 4; do
-            curl -s -o "c$i.json" -w "concurrent $i: %{http_code} %{time_total}s\n" localhost:7778/v1/chat/completions \
+            curl -s -m 120 -o "c$i.json" -w "concurrent $i: %{http_code} %{time_total}s\n" localhost:7778/v1/chat/completions \
               -d "{\"model\":\"$MODEL\",\"max_tokens\":40,\"messages\":[{\"role\":\"user\",\"content\":\"Count to five.\"}]}" > "s$i.txt" &
+            pids="$pids $!"
           done
-          wait
+          wait $pids  # not a bare wait: the node itself is a background job
           cat s1.txt s2.txt s3.txt s4.txt
           ! grep -v ": 200 " s1.txt s2.txt s3.txt s4.txt
           # What a newcomer sees for a model nobody serves.
