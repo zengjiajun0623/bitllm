@@ -17,7 +17,7 @@ iwr -OutFile bitllm.exe https://github.com/zengjiajun0623/bitllm/releases/latest
 
 然后浏览器打开 http://127.0.0.1:7778 ，选一个模型，复制给你的 agent 用的配置，点"发送测试消息"确认能用。用 curl 下载不会被 Mac 隔离，不会弹"无法验证开发者"。
 
-下面的命令里 `./bitllm-...` 都指这个 `bitllm`（Windows 是 `.\bitllm.exe`）。
+下面的命令里 `./bitllm` 在 Windows 上换成 `.\bitllm.exe`。
 
 ## 2. 分享你的 DeepSeek V4.1 Flash 1017
 
@@ -61,7 +61,7 @@ curl localhost:7778/v1/chat/completions \
   -d '{"model":"deepseek-v4.1-flash-1017","stream":true,"messages":[{"role":"user","content":"你好"}]}'
 ```
 
-只想用不想分享，直接运行 `./bitllm-...` 不带参数即可。自己分享的模型会优先由自己的机器回答，不出本机。
+只想用不想分享，直接运行 `./bitllm` 不带参数即可。自己分享的模型会优先由自己的机器回答，不出本机。
 
 ## 4. 访问规则（邀请制内测，PT 站式规则）
 
