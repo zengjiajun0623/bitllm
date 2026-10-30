@@ -249,6 +249,24 @@ func (n *Node) clamp(path string, body map[string]any) {
 	}
 }
 
+// admit takes a serving slot for remote, or returns why not. Strangers get
+// the slots left after a reserve kept for peers that have served us more than
+// we served them, and every peer is rate limited.
+func (n *Node) admit(remote peer.ID, now time.Time) (status int, msg string) {
+	if !n.reqLimit.allow(remote, now) {
+		return 429, "too many requests from you; slow down"
+	}
+	limit := int32(n.cfg.Concurrency)
+	if n.ledger.Balance(remote) <= 0 {
+		limit -= int32(reservedSlots(n.cfg.Concurrency))
+	}
+	if n.inflight.Add(1) > limit {
+		n.inflight.Add(-1)
+		return 429, "busy"
+	}
+	return 0, ""
+}
+
 // handleInfer serves one inference request from a peer.
 func (n *Node) handleInfer(s network.Stream) {
 	defer s.Close()
@@ -269,9 +287,8 @@ func (n *Node) handleInfer(s network.Stream) {
 		reply(402, fmt.Sprintf("you owe this node %d credits; share a model to earn", -bal))
 		return
 	}
-	if n.inflight.Add(1) > int32(n.cfg.Concurrency) {
-		n.inflight.Add(-1)
-		reply(429, "busy")
+	if status, msg := n.admit(remote, time.Now()); status != 0 {
+		reply(status, msg)
 		return
 	}
 	defer n.inflight.Add(-1)

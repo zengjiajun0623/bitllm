@@ -77,6 +77,9 @@ type Node struct {
 	claims      *Claims
 	claimTop    *pubsub.Topic
 	nodeKey     crypto.PrivKey
+	reqLimit    peerLimiter // per-peer request rate for jobs we serve
+	annRate     originRate  // announce gossip, per origin
+	claimRate   originRate  // claim gossip, per origin
 	receiptSeed []byte
 	relays      []peer.AddrInfo // bootstrap nodes, which also relay
 	http        *http.Client
@@ -221,9 +224,18 @@ func NewNode(ctx context.Context, cfg Config) (*Node, error) {
 		return nil, err
 	}
 	go n.readReceipts(ctx, rsub)
+	// A claim is gossiped by the node it names, at most once per 2 s (the node
+	// re-gossips its claim 5 s after start and then every 5 min).
+	n.claimRate.every = 2 * time.Second
 	ps.RegisterTopicValidator(ClaimTopic, func(_ context.Context, _ peer.ID, msg *pubsub.Message) bool {
 		var c Claim
-		return json.Unmarshal(msg.Data, &c) == nil && c.Valid()
+		return json.Unmarshal(msg.Data, &c) == nil && c.Node == msg.GetFrom().String() &&
+			c.Valid() && n.claimRate.allow(msg.GetFrom(), time.Now())
+	})
+	n.annRate.every = cfg.AnnounceEvery / 2
+	ps.RegisterTopicValidator(AnnounceTopic, func(_ context.Context, _ peer.ID, msg *pubsub.Message) bool {
+		var a Announce
+		return json.Unmarshal(msg.Data, &a) == nil && validAnnounce(&a) && n.annRate.allow(msg.GetFrom(), time.Now())
 	})
 	if n.claimTop, err = ps.Join(ClaimTopic); err != nil {
 		return nil, err
@@ -396,6 +408,15 @@ func (n *Node) readAnnounces(ctx context.Context, sub *pubsub.Subscription) {
 			continue
 		}
 		n.mu.Lock()
+		if _, ok := n.peers[from]; !ok && len(n.peers) >= maxPeers {
+			oldest, at := peer.ID(""), time.Now()
+			for p, pi := range n.peers {
+				if pi.seen.Before(at) {
+					oldest, at = p, pi.seen
+				}
+			}
+			delete(n.peers, oldest)
+		}
 		n.peers[from] = &peerInfo{Announce: a, seen: time.Now()}
 		n.mu.Unlock()
 	}

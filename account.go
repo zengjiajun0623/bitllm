@@ -177,7 +177,11 @@ func (cs *Claims) add(c Claim) bool {
 	}
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
-	if old, ok := cs.ByNode[c.Node]; ok && old.Time >= c.Time {
+	old, ok := cs.ByNode[c.Node]
+	if ok && old.Time >= c.Time {
+		return false
+	}
+	if !ok && len(cs.ByNode) >= maxClaims { // node ids are free; bound the map
 		return false
 	}
 	cs.ByNode[c.Node] = c
