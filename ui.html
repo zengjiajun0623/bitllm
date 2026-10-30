@@ -47,6 +47,7 @@ td.n, th.n { text-align: right; width: 76px; }
 .me { color: var(--green); }
 .mono { font-family: var(--mono); font-size: 12px; }
 .empty { color: var(--muted); padding: 8px 4px; }
+.row input { flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
 .row select { flex: 1; min-width: 0; max-width: 420px; }
 select, button { font: inherit; color: var(--text); background: var(--bg);
   border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
@@ -100,12 +101,27 @@ code { font-family: var(--mono); font-size: 12px; }
     </div>
     <div>
       <div class="panel">
+        <h2>Your account</h2>
+        <div id="acct-linked" hidden>
+          <div><b id="acct-name"></b> <span class="mono" id="acct-addr" style="color:var(--muted)"></span></div>
+          <div class="hint">Credits from all your linked machines add up here. Link another machine with the same wallet or <code>bitllm account link</code>.</div>
+        </div>
+        <div id="acct-unlinked" hidden>
+          <div class="hint" style="margin-top:0">Link this node to an Ethereum address so credits from all your machines add up under one account. It only signs a message: no transaction, no gas, nothing on chain.</div>
+          <div class="row" style="margin:10px 0 0;flex-wrap:wrap">
+            <input id="acct-input" placeholder="display name (optional)" maxlength="32">
+            <button id="acct-link" type="button">Link wallet</button>
+          </div>
+          <div class="result" id="acct-result"></div>
+        </div>
+      </div>
+      <div class="panel">
         <h2>Models on the network</h2>
         <table><thead><tr><th>model</th><th class="n">nodes</th></tr></thead><tbody id="models"></tbody></table>
       </div>
       <div class="panel">
         <h2>Credits for serving</h2>
-        <table><thead><tr><th>peer</th><th class="n">jobs</th><th class="n">credits</th></tr></thead><tbody id="credits"></tbody></table>
+        <table><thead><tr><th>account</th><th class="n">jobs</th><th class="n">credits</th></tr></thead><tbody id="credits"></tbody></table>
         <div class="hint">From signed receipts gossiped across the network. Every node computes the same table.</div>
       </div>
       <div class="panel" id="share" hidden>
@@ -125,10 +141,12 @@ let me = "";
 
 async function refresh() {
   try {
-    const [st, models, credits] = await Promise.all([
+    const [st, models, credits, acct] = await Promise.all([
       fetch("/status").then(r => r.json()),
+      
       fetch("/v1/models").then(r => r.json()),
       fetch("/credits").then(r => r.json()),
+      fetch("/account").then(r => r.json()),
     ]);
     me = st.id;
     $("peerid").textContent = short(me);
@@ -136,8 +154,21 @@ async function refresh() {
     $("s-net").innerHTML = `<span class="dot ${peers ? "on" : ""}"></span>${peers} peer${peers === 1 ? "" : "s"}`;
     $("s-models").textContent = models.data.length;
     $("s-serving").textContent = st.serving.length;
-    const mine = credits.find(c => c.server === me);
+    const myOwner = acct.owner || "";
+    const isMine = c => (myOwner && c.owner === myOwner) || c.nodes.some(x => x.node === me);
+    const mine = credits.find(isMine);
     $("s-credits").textContent = (mine ? mine.credits : 0).toLocaleString();
+    $("acct-linked").hidden = !myOwner;
+    $("acct-unlinked").hidden = !!myOwner;
+    if (myOwner) {
+      $("acct-name").textContent = acct.claim.name || "Unnamed";
+      $("acct-addr").textContent = myOwner.slice(0, 6) + "…" + myOwner.slice(-4);
+      $("acct-addr").title = myOwner;
+    } else if (!window.ethereum) {
+      $("acct-link").hidden = true;
+      $("acct-input").hidden = true;
+      $("acct-result").innerHTML = `No browser wallet found. In a terminal: <code>bitllm account new --name you</code>`;
+    }
 
     $("models").innerHTML = models.data.length ? models.data.map(m =>
       `<tr><td class="${st.serving.includes(m.id) ? "me" : ""}" title="${esc(m.id)}">${esc(m.id)}</td><td class="n">${m.nodes}</td></tr>`).join("")
@@ -147,8 +178,11 @@ async function refresh() {
     if (models.data.some(m => m.id === cur)) sel.value = cur;
     if (sel.value !== cur || !$("snip").textContent) renderSnip();
 
-    $("credits").innerHTML = credits.length ? credits.map(c =>
-      `<tr><td class="mono ${c.server === me ? "me" : ""}" title="${c.server}">${c.server === me ? "you" : short(c.server)}</td><td class="n">${c.jobs}</td><td class="n">${c.credits.toLocaleString()}</td></tr>`).join("")
+    $("credits").innerHTML = credits.length ? credits.map(c => {
+      const label = c.owner ? (c.name || c.owner.slice(0, 6) + "…" + c.owner.slice(-4)) : short(c.nodes[0].node);
+      const title = (c.owner || c.nodes[0].node) + ` · ${c.nodes.length} node${c.nodes.length === 1 ? "" : "s"}`;
+      return `<tr><td class="${c.owner ? "" : "mono "}${isMine(c) ? "me" : ""}" title="${esc(title)}">${esc(isMine(c) ? label + " (you)" : label)}</td><td class="n">${c.jobs}</td><td class="n">${c.credits.toLocaleString()}</td></tr>`;
+    }).join("")
       : `<tr><td class="empty" colspan="3">No receipts yet.</td></tr>`;
 
     const byPeer = {};
@@ -229,6 +263,25 @@ $("test").onclick = async () => {
   refresh();
 };
 
+$("acct-link").onclick = async () => {
+  const res = $("acct-result");
+  try {
+    $("acct-link").disabled = true;
+    const [owner] = await window.ethereum.request({ method: "eth_requestAccounts" });
+    const name = $("acct-input").value.trim();
+    const post = (u, b) => fetch(u, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) })
+      .then(async r => { const j = await r.json(); if (!r.ok) throw new Error(j.error.message); return j; });
+    const m = await post("/account/message", { owner, name });
+    const hex = "0x" + Array.from(new TextEncoder().encode(m.message), b => b.toString(16).padStart(2, "0")).join("");
+    const sig = await window.ethereum.request({ method: "personal_sign", params: [hex, owner] });
+    await post("/account/link", { owner, name, time: m.time, owner_sig: sig });
+    res.innerHTML = `<span class="ok">Linked.</span>`;
+    refresh();
+  } catch (e) {
+    res.innerHTML = `<span class="bad">${esc(e.message || e)}</span>`;
+  }
+  $("acct-link").disabled = false;
+};
 $("peerid").onclick = () => navigator.clipboard && navigator.clipboard.writeText(me);
 refresh();
 setInterval(refresh, 3000);

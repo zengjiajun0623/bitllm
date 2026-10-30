@@ -33,6 +33,10 @@ func (l *listFlag) Set(s string) error { *l = append(*l, s); return nil }
 
 func main() {
 	home, _ := os.UserHomeDir()
+	if len(os.Args) > 1 && os.Args[1] == "account" {
+		accountCmd(os.Args[2:], home)
+		return
+	}
 	var (
 		cfg          Config
 		models, boot listFlag

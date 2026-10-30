@@ -31,10 +31,27 @@ func (n *Node) Gateway() http.Handler {
 		w.Write(uiHTML)
 	})
 	mux.HandleFunc("GET /status", n.status)
+	mux.HandleFunc("GET /account", n.account)
+	mux.HandleFunc("POST /account/message", n.accountMessage)
+	mux.HandleFunc("POST /account/link", n.accountLink)
 	mux.HandleFunc("GET /credits", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(n.creditsTable())
 	})
-	return mux
+	return sameOrigin(mux)
+}
+
+// sameOrigin refuses state-changing requests from other web pages. The
+// gateway listens on localhost without auth, so without this any website you
+// visit could spend your credits or relink your node through your browser.
+func sameOrigin(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if o := r.Header.Get("Origin"); r.Method != "GET" && o != "" &&
+			o != "http://"+r.Host && o != "https://"+r.Host {
+			jsonErr(w, 403, "cross-origin request refused")
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
 }
 
 func jsonErr(w http.ResponseWriter, status int, msg string) {
@@ -159,4 +176,40 @@ func (n *Node) status(w http.ResponseWriter, r *http.Request) {
 		"inflight": n.inflight.Load(),
 		"ledger":   n.ledger.Snapshot(),
 	})
+}
+
+func (n *Node) account(w http.ResponseWriter, r *http.Request) {
+	out := map[string]any{"node": n.host.ID().String(), "claim": nil}
+	if c, ok := n.claims.get(n.host.ID().String()); ok {
+		out["claim"] = c
+		out["owner"] = checksumAddress(c.Owner)
+	}
+	json.NewEncoder(w).Encode(out)
+}
+
+// accountMessage returns the text a wallet must sign to claim this node.
+func (n *Node) accountMessage(w http.ResponseWriter, r *http.Request) {
+	var req struct{ Owner, Name string }
+	json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req)
+	c, err := newClaim(n.host.ID(), req.Owner, req.Name)
+	if err != nil {
+		jsonErr(w, 400, err.Error())
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]any{"message": c.Message(), "time": c.Time})
+}
+
+func (n *Node) accountLink(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Owner, Name string
+		Time        int64
+		OwnerSig    string `json:"owner_sig"`
+	}
+	json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req)
+	c, err := n.Link(req.Owner, req.Name, req.Time, req.OwnerSig)
+	if err != nil {
+		jsonErr(w, 400, err.Error())
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]any{"claim": c, "owner": checksumAddress(c.Owner)})
 }

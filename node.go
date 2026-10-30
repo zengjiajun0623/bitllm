@@ -71,6 +71,9 @@ type Node struct {
 	topic    *pubsub.Topic
 	ledger   *Ledger
 	receipts *Receipts
+	claims   *Claims
+	claimTop *pubsub.Topic
+	nodeKey  crypto.PrivKey
 	relays   []peer.AddrInfo // bootstrap nodes, which also relay
 	http     *http.Client
 	inflight atomic.Int32
@@ -181,6 +184,8 @@ func NewNode(ctx context.Context, cfg Config) (*Node, error) {
 		n.host.SetStreamHandler(InferProto, n.handleInfer)
 	}
 
+	n.nodeKey = key
+	n.claims = OpenClaims(filepath.Join(cfg.DataDir, "claims.json"))
 	if n.receipts, err = OpenReceipts(filepath.Join(cfg.DataDir, "receipts.jsonl"), key, n.host.ID()); err != nil {
 		return nil, err
 	}
@@ -203,6 +208,19 @@ func NewNode(ctx context.Context, cfg Config) (*Node, error) {
 		return nil, err
 	}
 	go n.readReceipts(ctx, rsub)
+	ps.RegisterTopicValidator(ClaimTopic, func(_ context.Context, _ peer.ID, msg *pubsub.Message) bool {
+		var c Claim
+		return json.Unmarshal(msg.Data, &c) == nil && c.Valid()
+	})
+	if n.claimTop, err = ps.Join(ClaimTopic); err != nil {
+		return nil, err
+	}
+	csub, err := n.claimTop.Subscribe()
+	if err != nil {
+		return nil, err
+	}
+	go n.readClaims(ctx, csub)
+	go n.claimLoop(ctx)
 	if n.topic, err = ps.Join(AnnounceTopic); err != nil {
 		return nil, err
 	}
@@ -234,6 +252,59 @@ func NewNode(ctx context.Context, cfg Config) (*Node, error) {
 		go n.announceLoop(ctx)
 	}
 	return n, nil
+}
+
+func (n *Node) readClaims(ctx context.Context, sub *pubsub.Subscription) {
+	for {
+		msg, err := sub.Next(ctx)
+		if err != nil {
+			return
+		}
+		var c Claim
+		if json.Unmarshal(msg.Data, &c) == nil {
+			n.claims.add(c)
+		}
+	}
+}
+
+// claimLoop re-gossips our own claim now and then, so peers that missed it
+// (or joined after) learn who owns this node.
+func (n *Node) claimLoop(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(5 * time.Second):
+		}
+		if c, ok := n.claims.get(n.host.ID().String()); ok {
+			b, _ := json.Marshal(c)
+			n.claimTop.Publish(ctx, b)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(5 * time.Minute):
+		}
+	}
+}
+
+// Link records a claim of this node by owner, given the owner's signature
+// over the claim message, countersigns it, and gossips it.
+func (n *Node) Link(owner, name string, t int64, ownerSig string) (*Claim, error) {
+	c, err := newClaim(n.host.ID(), owner, name)
+	if err != nil {
+		return nil, err
+	}
+	c.Time, c.OwnerSig = t, ownerSig
+	if err := signClaimAsNode(c, n.nodeKey); err != nil {
+		return nil, err
+	}
+	if !n.claims.add(*c) {
+		return nil, fmt.Errorf("claim rejected (invalid, or older than the current one)")
+	}
+	b, _ := json.Marshal(c)
+	n.claimTop.Publish(context.Background(), b)
+	return c, nil
 }
 
 // HandlePeerFound is the mDNS callback.

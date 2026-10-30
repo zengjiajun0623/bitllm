@@ -78,6 +78,22 @@ peers. What credits will be worth is not decided yet. Which receipts count will 
 before it is: serving yourself through fake clients or serving a model other than the one named
 will not count.
 
+### Accounts
+
+Credits are earned by nodes. To add up the credits of all your machines, link each node to one
+Ethereum address. It is only a signature (personal_sign): no transaction, no gas, no RPC, nothing
+on chain. A claim is signed by both the owner's wallet and the node's key, so nobody can claim
+your node, and the newest claim per node wins.
+
+```bash
+bitllm account new --name alice     # new 12-word account, links this node
+bitllm account link --name alice    # link another machine to the same account
+bitllm account                      # show who owns this node
+```
+
+Or click "Link wallet" in the dashboard to sign with a browser wallet (MetaMask, Rabby...).
+Smart-contract wallets are not supported yet (their signatures need a chain to verify).
+
 Separately, each node keeps a private ledger of work exchanged with each peer
 (`~/.bitllm/ledger.json`). A peer may take up to `--free-credits` (50,000) more than it gave
 before your node stops serving it.

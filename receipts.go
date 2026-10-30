@@ -8,7 +8,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"sort"
 	"sync"
 	"time"
 
@@ -132,6 +131,12 @@ func (rs *Receipts) add(sr SignedReceipt) bool {
 }
 
 func (rs *Receipts) Tally() map[string]ServerCredits {
+	out, _ := rs.tally()
+	return out
+}
+
+// tally sums credits per server and also returns each server's set of clients.
+func (rs *Receipts) tally() (map[string]ServerCredits, map[string]map[string]bool) {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
 	out := map[string]ServerCredits{}
@@ -148,7 +153,7 @@ func (rs *Receipts) Tally() map[string]ServerCredits {
 		c.Clients = len(clients[r.Server])
 		out[r.Server] = c
 	}
-	return out
+	return out, clients
 }
 
 // served is called by the server when a job finishes.
@@ -231,7 +236,13 @@ func (n *Node) sendReceipt(p peer.ID, job, model string, m meter) error {
 	return nil
 }
 
-// handleSync streams every receipt we know, so a new node can catch up.
+// syncItem is one line of the sync stream: a receipt, or a node claim.
+type syncItem struct {
+	SignedReceipt
+	Claim *Claim `json:"claim,omitempty"`
+}
+
+// handleSync streams every receipt and claim we know, so a new node can catch up.
 func (n *Node) handleSync(s network.Stream) {
 	defer s.Close()
 	n.receipts.mu.Lock()
@@ -240,6 +251,11 @@ func (n *Node) handleSync(s network.Stream) {
 	enc := json.NewEncoder(s)
 	for _, sr := range all {
 		if enc.Encode(sr) != nil {
+			return
+		}
+	}
+	for _, c := range n.claims.all() {
+		if enc.Encode(map[string]any{"claim": c}) != nil {
 			return
 		}
 	}
@@ -254,14 +270,16 @@ func (n *Node) syncReceipts(ctx context.Context, p peer.ID) (int, error) {
 	s.CloseWrite()
 	dec, added := json.NewDecoder(s), 0
 	for {
-		var sr SignedReceipt
-		if err := dec.Decode(&sr); err != nil {
+		var it syncItem
+		if err := dec.Decode(&it); err != nil {
 			if err == io.EOF {
 				err = nil
 			}
 			return added, err
 		}
-		if n.receipts.add(sr) {
+		if it.Claim != nil {
+			n.claims.add(*it.Claim)
+		} else if n.receipts.add(it.SignedReceipt) {
 			added++
 		}
 	}
@@ -280,18 +298,8 @@ func (n *Node) readReceipts(ctx context.Context, sub *pubsub.Subscription) {
 	}
 }
 
-// creditsTable is the tally sorted by credits, for the gateway.
-func (n *Node) creditsTable() []map[string]any {
-	t := n.receipts.Tally()
-	ids := make([]string, 0, len(t))
-	for id := range t {
-		ids = append(ids, id)
-	}
-	sort.Slice(ids, func(i, j int) bool { return t[ids[i]].Credits > t[ids[j]].Credits })
-	out := []map[string]any{}
-	for _, id := range ids {
-		c := t[id]
-		out = append(out, map[string]any{"server": id, "credits": c.Credits, "jobs": c.Jobs, "clients": c.Clients})
-	}
-	return out
+// creditsTable is the tally grouped by owner, for the gateway.
+func (n *Node) creditsTable() []OwnerCredits {
+	perNode, clients := n.receipts.tally()
+	return ownerTable(perNode, clients, n.claims)
 }

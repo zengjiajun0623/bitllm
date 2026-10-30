@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -346,5 +347,82 @@ func TestAnthropicMessages(t *testing.T) {
 			t.Fatalf("receipts: %+v", server.receipts.Tally())
 		}
 		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// TestOwnerAccounts: one owner links two serving nodes; every node sums their
+// credits under that owner, including a node that joins later.
+func TestOwnerAccounts(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	up := mockUpstream(t, "local-ds")
+	defer up.Close()
+	boot := testNode(t, ctx, Config{})
+	bs := boot.Addrs()[:1]
+	srv := func() *Node {
+		return testNode(t, ctx, Config{Bootstrap: bs, Upstream: up.URL + "/v1",
+			Models: map[string]string{"ds": "local-ds"}, FreeCredits: 1000, Concurrency: 1})
+	}
+	a, b := srv(), srv()
+	client := testNode(t, ctx, Config{Bootstrap: bs})
+
+	owner, _ := keyFromMnemonic(testMnemonic)
+	for _, n := range []*Node{a, b} {
+		c, _ := newClaim(n.host.ID(), testAddress, "alice")
+		sig := hex.EncodeToString(ethSign(owner, c.Message()))
+		if _, err := n.Link(testAddress, "alice", c.Time, sig); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A forged owner signature is refused by the node.
+	if _, err := a.Link("0x000000000000000000000000000000000000dEaD", "x", time.Now().Unix(), strings.Repeat("00", 65)); err == nil {
+		t.Fatal("linked with a forged signature")
+	}
+
+	for deadline := time.Now().Add(20 * time.Second); len(client.candidates("ds")) < 2; {
+		if time.Now().After(deadline) {
+			t.Fatal("client did not discover both servers")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	// One job on each server.
+	for _, n := range []*Node{a, b} {
+		w := httptest.NewRecorder()
+		if _, err := client.infer(ctx, n.host.ID(), "/chat/completions", []byte(`{"model":"ds","messages":[]}`), false, w); err != nil || w.Code != 200 {
+			t.Fatalf("infer on %s: %v %d", n.host.ID(), err, w.Code)
+		}
+	}
+
+	alice := func(n *Node) (OwnerCredits, bool) {
+		for _, r := range n.creditsTable() {
+			if r.Owner == testAddress {
+				return r, true
+			}
+		}
+		return OwnerCredits{}, false
+	}
+	wait := func(n *Node, who string) {
+		t.Helper()
+		for deadline := time.Now().Add(15 * time.Second); ; {
+			if r, ok := alice(n); ok && r.Credits == 40 && len(r.Nodes) == 2 && r.Name == "alice" {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("%s table: %+v", who, n.creditsTable())
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+	wait(client, "client")
+	wait(boot, "bootstrap")
+	wait(testNode(t, ctx, Config{Bootstrap: bs}), "late joiner")
+
+	// The gateway refuses state changes from other web pages.
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/account/link", strings.NewReader(`{}`))
+	r.Header.Set("Origin", "https://evil.example")
+	a.Gateway().ServeHTTP(w, r)
+	if w.Code != 403 {
+		t.Fatalf("cross-origin link: %d", w.Code)
 	}
 }
