@@ -1,0 +1,46 @@
+# Runs the public one-line installers from bitllm.org on fresh machines, the
+# way a newcomer (or their agent) would, then starts the node and waits for
+# the local API.
+name: install-test
+on:
+  workflow_dispatch:
+jobs:
+  unix:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - name: install
+        run: curl -fsSL https://bitllm.org/install.sh | sh
+      - name: start and wait for the API
+        run: |
+          nohup ~/.local/bin/bitllm --mdns=false --upnp=false > bitllm.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:7778/status > /dev/null && break; sleep 1; done
+          curl -sf http://127.0.0.1:7778/status
+          sleep 20
+          curl -s http://127.0.0.1:7778/v1/models; echo
+      - if: always()
+        run: cat bitllm.log || true
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: install
+        shell: powershell
+        run: irm https://bitllm.org/install.ps1 | iex
+      - name: install (PowerShell 7)
+        shell: pwsh
+        run: irm https://bitllm.org/install.ps1 | iex
+      - name: start and wait for the API
+        shell: pwsh
+        run: |
+          Start-Process -WindowStyle Hidden "$env:LOCALAPPDATA\bitllm\bitllm.exe" -ArgumentList "--mdns=false","--upnp=false"
+          $ok = $false
+          for ($i = 0; $i -lt 60; $i++) { try { Invoke-RestMethod http://127.0.0.1:7778/status | Out-Null; $ok = $true; break } catch { Start-Sleep 1 } }
+          if (-not $ok) { throw "gateway never answered" }
+          Invoke-RestMethod http://127.0.0.1:7778/status | ConvertTo-Json -Depth 2
+          Start-Sleep 20
+          Invoke-RestMethod http://127.0.0.1:7778/v1/models | ConvertTo-Json -Depth 4
