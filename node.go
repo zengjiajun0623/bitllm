@@ -69,28 +69,32 @@ type peerInfo struct {
 }
 
 type Node struct {
-	cfg         Config
-	host        host.Host
-	dht         *dht.IpfsDHT
-	topic       *pubsub.Topic
-	ledger      *Ledger
-	receipts    *Receipts
-	claims      *Claims
-	claimTop    *pubsub.Topic
-	nodeKey     crypto.PrivKey
-	members     *Members
-	memTop      *pubsub.Topic
-	memRate     originRate // membership gossip, per origin
-	quota       *Quota
-	accessMu    sync.Mutex
-	accessAt    time.Time
-	access      *MemberSet // cached, see memberSet
-	annRate     originRate // announce gossip, per origin
-	claimRate   originRate // claim gossip, per origin
-	receiptSeed []byte
-	relays      []peer.AddrInfo // bootstrap nodes, which also relay
-	http        *http.Client
-	inflight    atomic.Int32
+	cfg          Config
+	host         host.Host
+	dht          *dht.IpfsDHT
+	topic        *pubsub.Topic
+	ledger       *Ledger
+	receipts     *Receipts
+	claims       *Claims
+	claimTop     *pubsub.Topic
+	nodeKey      crypto.PrivKey
+	members      *Members
+	memTop       *pubsub.Topic
+	memRate      originRate // membership gossip, per origin
+	quota        *Quota
+	accessMu     sync.Mutex
+	accessAt     time.Time
+	access       *MemberSet // cached, see memberSet
+	servedMu     sync.Mutex // own lock: memberSet holds accessMu while Compute calls servedSets
+	servedAt     time.Time
+	servedEver   map[string]bool // cached, see servedSets
+	servedRecent map[string]bool
+	annRate      originRate // announce gossip, per origin
+	claimRate    originRate // claim gossip, per origin
+	receiptSeed  []byte
+	relays       []peer.AddrInfo // bootstrap nodes, which also relay
+	http         *http.Client
+	inflight     atomic.Int32
 
 	mu    sync.Mutex
 	peers map[peer.ID]*peerInfo
@@ -246,6 +250,12 @@ func NewNode(ctx context.Context, cfg Config) (*Node, error) {
 	ps.RegisterTopicValidator(MembersTopic, func(_ context.Context, _ peer.ID, msg *pubsub.Message) bool {
 		var it memberItem
 		if json.Unmarshal(msg.Data, &it) != nil || !n.memRate.allow(msg.GetFrom(), time.Now()) {
+			return false
+		}
+		// Cheap filter first: an invite from someone who is not a member (per
+		// the 10 s cache) is dropped before the full check, which recomputes
+		// the member set and costs CPU that outsiders must not be able to spend.
+		if it.Invite != nil && n.members.Enabled() && !n.memberSet().Member[it.Invite.Inviter] {
 			return false
 		}
 		return n.members.known(it) || n.members.check(it) == nil

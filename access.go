@@ -78,11 +78,19 @@ func (n *Node) invalidateMembers() {
 	n.accessMu.Lock()
 	n.access = nil
 	n.accessMu.Unlock()
+	n.servedMu.Lock()
+	n.servedEver = nil
+	n.servedMu.Unlock()
 }
 
 // servedSets are the accounts owning a node that has a receipt as server:
 // ever (10 invites) and within the contributor window (no quota).
 func (n *Node) servedSets() (ever, recent map[string]bool) {
+	n.servedMu.Lock()
+	defer n.servedMu.Unlock()
+	if n.servedEver != nil && time.Since(n.servedAt) < 10*time.Second {
+		return n.servedEver, n.servedRecent
+	}
 	since := time.Now().Add(-contributorWindow).Unix()
 	n.receipts.mu.Lock()
 	servers := map[string]bool{} // node -> served recently
@@ -98,6 +106,7 @@ func (n *Node) servedSets() (ever, recent map[string]bool) {
 			recent[c.Owner] = recent[c.Owner] || rec
 		}
 	}
+	n.servedEver, n.servedRecent, n.servedAt = ever, recent, time.Now()
 	return ever, recent
 }
 
