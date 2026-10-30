@@ -6,6 +6,7 @@
 <meta name="color-scheme" content="light">
 <title>BitLLM</title>
 <meta name="description" content="BitLLM: a peer-to-peer LLM inference system. Use open models running on other people's GPUs, share your own. Invite-only beta, MIT licensed.">
+<link rel="alternate" type="text/plain" href="/llms.txt" title="Setup steps for AI agents">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;0,700;1,400&family=JetBrains+Mono:wght@400&display=swap">
@@ -55,6 +56,7 @@ p { margin: 0 0 14px; text-align: justify; hyphens: auto; }
 
 .listing { margin: 16px 0 6px; }
 .lrow { display: grid; grid-template-columns: 6.2em minmax(0, 1fr); gap: 6px 14px; align-items: start; margin-bottom: 12px; }
+.agentnote { background: var(--box); padding: 12px 16px; text-align: left; }
 .lrow > span { font-style: italic; color: var(--sub); padding-top: 9px; font-size: 17px; }
 .code { position: relative; background: var(--box); padding: 10px 64px 10px 14px; font: 13.5px/1.7 var(--code);
   white-space: pre; overflow-x: auto; min-width: 0; }
@@ -123,9 +125,19 @@ td code, p code, li code { font: 14px var(--code); overflow-wrap: anywhere; }
   </figure>
 
   <h2 id="use">Using the network</h2>
-  <p>Download the program and run it. It joins through a bootstrap node and needs no port forwarding and no
+  <p class="agentnote"><b>Using an AI agent?</b> Give it <a href="/llms.txt">bitllm.org/llms.txt</a>: step-by-step
+    setup with a check after each step, for using the network or sharing a GPU.</p>
+  <p>Install the program and run it. It joins through a bootstrap node and needs no port forwarding and no
     configuration.</p>
-  <div class="listing" id="listing"></div>
+  <div class="listing">
+    <div class="lrow"><span>macOS, Linux</span><div class="code"><button class="copy" type="button">copy</button>curl -fsSL https://bitllm.org/install.sh | sh
+~/.local/bin/bitllm</div></div>
+    <div class="lrow"><span>Windows</span><div class="code"><button class="copy" type="button">copy</button>irm https://bitllm.org/install.ps1 | iex
+&amp; "$env:LOCALAPPDATA\bitllm\bitllm.exe"</div></div>
+    <div class="lrow"><span></span><p style="margin:0;font-size:16px;color:var(--sub)">The script picks the build for your
+      machine, checks its checksum and installs to <code>~/.local/bin</code>, no sudo. Prefer to download by hand?
+      Get the file for your system from <a href="https://github.com/zengjiajun0623/bitllm/releases/latest">Releases</a>.</p></div>
+  </div>
   <p>Then open <a href="http://127.0.0.1:7778">http://127.0.0.1:7778</a> in your browser. The page lists the models
     online right now, gives copy-paste setup for Claude Code, Cline, Aider or any OpenAI-compatible client, and
     sends a test message. Your agent talks to <code>127.0.0.1:7778</code>, which speaks both the OpenAI and the
@@ -192,16 +204,6 @@ td code, p code, li code { font: 14px var(--code); overflow-wrap: anywhere; }
 </article>
 
 <script>
-const REL = "https://github.com/zengjiajun0623/bitllm/releases/latest/download/";
-const rows = [
-  ["macOS", `curl -fL -o bitllm ${REL}bitllm-darwin-arm64\nchmod +x bitllm && ./bitllm`],
-  ["Linux", `curl -fL -o bitllm ${REL}bitllm-linux-amd64\nchmod +x bitllm && ./bitllm`],
-  ["Windows", `iwr -OutFile bitllm.exe ${REL}bitllm-windows-amd64.exe\n.\\bitllm.exe`],
-];
-const esc = s => s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
-document.getElementById("listing").innerHTML = rows.map(([os, cmd]) =>
-  `<div class="lrow"><span>${os}</span><div class="code"><button class="copy" type="button">copy</button>${esc(cmd)}</div></div>`).join("") +
-  `<div class="lrow"><span></span><p style="margin:0;font-size:16px;color:var(--sub)">On ARM Linux (DGX Spark, Raspberry Pi) use <code>bitllm-linux-arm64</code>. Windows commands are for PowerShell.</p></div>`;
 document.addEventListener("click", e => {
   const b = e.target.closest(".copy"); if (!b) return;
   const box = b.parentElement, text = box.innerText.replace(b.innerText, "").trim();

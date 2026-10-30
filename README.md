@@ -1,5 +1,7 @@
 # BitLLM
 
+> Using an AI agent? Point it at https://bitllm.org/llms.txt. Changing the code? See [AGENTS.md](AGENTS.md).
+
 **BitTorrent for local LLMs.** Share your local model, use everyone's.
 
 Every node runs the same binary. It can share an OpenAI-compatible server you already run
@@ -11,16 +13,20 @@ relay plus hole punching when both sides are behind NAT.
 Install and run (no port forwarding, no config; it joins through `boot.bitllm.org`):
 
 ```bash
-# macOS (Apple silicon)
-curl -fL -o bitllm https://github.com/zengjiajun0623/bitllm/releases/latest/download/bitllm-darwin-arm64 && chmod +x bitllm && ./bitllm
-# Linux x86-64 (use bitllm-linux-arm64 on ARM, e.g. DGX Spark)
-curl -fL -o bitllm https://github.com/zengjiajun0623/bitllm/releases/latest/download/bitllm-linux-amd64 && chmod +x bitllm && ./bitllm
-# Windows (PowerShell)
-iwr -OutFile bitllm.exe https://github.com/zengjiajun0623/bitllm/releases/latest/download/bitllm-windows-amd64.exe; .\bitllm.exe
+# macOS (Apple silicon), Linux (x86-64, arm64): installs to ~/.local/bin, verifies the checksum
+curl -fsSL https://bitllm.org/install.sh | sh
+~/.local/bin/bitllm
+```
+
+```powershell
+# Windows (PowerShell): installs to %LOCALAPPDATA%\bitllm
+irm https://bitllm.org/install.ps1 | iex
+& "$env:LOCALAPPDATA\bitllm\bitllm.exe"
 ```
 
 Then open http://127.0.0.1:7778: pick a model, copy the setup for your agent, and send a test
-message. Downloading with curl avoids the macOS quarantine flag a browser download gets.
+message. Prefer to download by hand? Get the file for your system from [Releases](../../releases)
+(use curl, not a browser, on macOS to avoid the quarantine flag).
 中文说明见 [JOIN.zh.md](JOIN.zh.md)。
 
 ## Share a model

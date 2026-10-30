@@ -1,21 +1,26 @@
 # 加入 BitLLM
 
+> 用 AI agent 帮你装？把 https://bitllm.org/llms.txt 发给它，里面有一步一检查的安装和配置步骤。
+
 BitLLM 是一个本地大模型的点对点网络：把你自己跑的模型分享出来，也能用到别人分享的模型。没有中心服务器，不用做端口转发，不用注册账号。
 
 ## 1. 下载
 
-复制对应系统的一行命令，下载、加执行权限、运行一步到位：
+复制对应系统的命令，安装脚本会自动选对版本、核对校验和，装到 `~/.local/bin`，不需要 sudo：
 
 ```bash
-# Mac（Apple 芯片）
-curl -fL -o bitllm https://github.com/zengjiajun0623/bitllm/releases/latest/download/bitllm-darwin-arm64 && chmod +x bitllm && ./bitllm
-# Linux x86（ARM 机器比如 DGX Spark 用 bitllm-linux-arm64）
-curl -fL -o bitllm https://github.com/zengjiajun0623/bitllm/releases/latest/download/bitllm-linux-amd64 && chmod +x bitllm && ./bitllm
-# Windows（PowerShell）
-iwr -OutFile bitllm.exe https://github.com/zengjiajun0623/bitllm/releases/latest/download/bitllm-windows-amd64.exe; .\bitllm.exe
+# Mac（Apple 芯片）、Linux
+curl -fsSL https://bitllm.org/install.sh | sh
+~/.local/bin/bitllm
 ```
 
-然后浏览器打开 http://127.0.0.1:7778 ，选一个模型，复制给你的 agent 用的配置，点"发送测试消息"确认能用。用 curl 下载不会被 Mac 隔离，不会弹"无法验证开发者"。
+```powershell
+# Windows（PowerShell）
+irm https://bitllm.org/install.ps1 | iex
+& "$env:LOCALAPPDATA\bitllm\bitllm.exe"
+```
+
+然后浏览器打开 http://127.0.0.1:7778 ，选一个模型，复制给你的 agent 用的配置，点"发送测试消息"确认能用。想手动下载的话，到 Releases 页面下载对应系统的文件（Mac 上请用 curl 下载，避免被系统隔离）。
 
 下面的命令里 `./bitllm` 在 Windows 上换成 `.\bitllm.exe`。
 

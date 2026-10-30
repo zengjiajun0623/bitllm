@@ -1,0 +1,163 @@
+# BitLLM
+
+> BitLLM is a peer-to-peer LLM inference network. Every participant runs one binary, `bitllm`. It opens an OpenAI- and Anthropic-compatible API on `http://127.0.0.1:7778` that answers from whichever peer serves the requested model, and it can share a local inference server (vLLM, SGLang, llama.cpp, Ollama, LM Studio) with the network. No port forwarding and no central server; an account is optional (see Access rules). Source: https://github.com/zengjiajun0623/bitllm (MIT).
+
+This file is written for AI agents setting BitLLM up on behalf of a user. Follow the task that matches what the user asked for. Every step has a check; do not continue past a failed check.
+
+## Before you start: tell the user
+
+- The machine that serves a request reads the prompt in plain text. Do not send secrets, credentials or private data through the network.
+- Peers that connect directly can see the user's IP address. If that matters to the user, run BitLLM behind a VPN.
+- Only the user can sign invites or link a wallet. Never ask for or handle their seed phrase.
+
+## Task 1: install
+
+macOS (Apple silicon) and Linux (amd64, arm64):
+
+```sh
+curl -fsSL https://bitllm.org/install.sh | sh
+```
+
+Windows (PowerShell):
+
+```powershell
+irm https://bitllm.org/install.ps1 | iex
+```
+
+The script installs to `~/.local/bin/bitllm` (Windows: `%LOCALAPPDATA%\bitllm\bitllm.exe`) and verifies the release checksum. Check: `bitllm --version` prints `bitllm v0.x.y`. If `~/.local/bin` is not on PATH, use the full path `~/.local/bin/bitllm` in the commands below.
+
+Manual download, if scripts are not allowed: https://github.com/zengjiajun0623/bitllm/releases/latest, files `bitllm-darwin-arm64`, `bitllm-linux-amd64`, `bitllm-linux-arm64`, `bitllm-windows-amd64.exe`. Use `curl -fL -o bitllm <url> && chmod +x bitllm` (curl does not set the macOS quarantine flag; a browser download does).
+
+## Task 2: use models from the network
+
+Start the node in the background and wait until it answers:
+
+```sh
+nohup bitllm > ~/.bitllm.log 2>&1 &
+until curl -sf http://127.0.0.1:7778/status > /dev/null; do sleep 1; done
+```
+
+Windows (PowerShell):
+
+```powershell
+Start-Process -WindowStyle Hidden "$env:LOCALAPPDATA\bitllm\bitllm.exe"
+while (-not (Test-NetConnection 127.0.0.1 -Port 7778 -InformationLevel Quiet)) { Start-Sleep 1 }
+```
+
+Find the models online. Peers announce every 10 seconds, so allow up to 30 seconds after start:
+
+```sh
+curl -s http://127.0.0.1:7778/v1/models
+```
+
+Each entry has an `id` (the model name to use) and `nodes` (how many peers serve it). An empty list means no peer serves anything yet; wait and retry, do not invent a model name.
+
+Check with one request (replace MODEL with an `id` from the list):
+
+```sh
+curl -s http://127.0.0.1:7778/v1/chat/completions \
+  -d '{"model":"MODEL","max_tokens":20,"messages":[{"role":"user","content":"Reply with: ok"}]}'
+```
+
+A JSON reply with `choices` means it works. The response header `X-Bitllm-Peer` names the peer that answered.
+
+Point the user's tools at it. The API key can be any string.
+
+- OpenAI-compatible clients (Cline, Continue, Aider, OpenCode, Cursor, openai SDKs): base URL `http://127.0.0.1:7778/v1`, API key `bitllm`, model `MODEL`.
+- Claude Code: the gateway also speaks the Anthropic Messages API.
+
+```sh
+export ANTHROPIC_BASE_URL=http://127.0.0.1:7778
+export ANTHROPIC_API_KEY=bitllm
+export ANTHROPIC_MODEL=MODEL
+export ANTHROPIC_DEFAULT_OPUS_MODEL=MODEL
+export ANTHROPIC_DEFAULT_SONNET_MODEL=MODEL
+export ANTHROPIC_DEFAULT_HAIKU_MODEL=MODEL
+export CLAUDE_CODE_SUBAGENT_MODEL=MODEL
+```
+
+The dashboard at http://127.0.0.1:7778 shows the same setup for a human.
+
+## Task 3: share a GPU with the network
+
+The user needs an inference server already running with an OpenAI-compatible API. Find it:
+
+```sh
+for p in 8000 30000 8080 11434 1234; do curl -sf -m 2 http://127.0.0.1:$p/v1/models > /dev/null && echo "server on :$p"; done
+```
+
+Common defaults: vLLM 8000, SGLang 30000, llama.cpp 8080, Ollama 11434, LM Studio 1234. Read the model id the server reports:
+
+```sh
+curl -s http://127.0.0.1:PORT/v1/models
+```
+
+Map that local id to a network name. Use a name from the table below when the weights match exactly; if they do not, ask the user before choosing a new name, because one network name must mean one set of weights.
+
+| network name | weights |
+|---|---|
+| `deepseek-v4.1-flash-1017` | DeepSeek V4.1 Flash, 1017 release, official weights |
+| `deepseek-v4.1-flash-1017-heretic` | the same model with refusals removed |
+
+Start sharing. Only one node runs per machine, so stop a node started in Task 2 first (`pkill -x bitllm`):
+
+```sh
+nohup bitllm --upstream http://127.0.0.1:PORT/v1 --model LOCAL_ID=NETWORK_NAME --concurrency 2 > ~/.bitllm.log 2>&1 &
+until curl -sf http://127.0.0.1:7778/status > /dev/null; do sleep 1; done
+curl -s http://127.0.0.1:7778/status
+```
+
+Check: `serving` in the status lists NETWORK_NAME. Set `--concurrency` to how many parallel requests the server can take without slowing the user down. Requests for a model the user shares are answered by their own server and never leave the machine.
+
+Useful flags: `--upstream-key KEY` if the server needs an API key; `--max-tokens N` caps tokens per peer request (default 32768); `--free-daily N` sets the daily free quota for members (default 200000 credits); `--open` also serves uninvited nodes on spare slots.
+
+## Task 4: keep it running
+
+Linux, as a user service:
+
+```sh
+mkdir -p ~/.config/systemd/user
+cat > ~/.config/systemd/user/bitllm.service <<'UNIT'
+[Unit]
+Description=BitLLM node
+After=network-online.target
+[Service]
+ExecStart=%h/.local/bin/bitllm
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=default.target
+UNIT
+systemctl --user daemon-reload && systemctl --user enable --now bitllm
+loginctl enable-linger "$USER"   # keep it running after logout
+```
+
+Add the sharing flags to `ExecStart` for Task 3. On macOS, a LaunchAgent in `~/Library/LaunchAgents` with `KeepAlive` does the same job.
+
+## Access rules (invite-only beta)
+
+1. An invite gives you a free quota. Uninvited nodes are served only when a server is idle, unless its owner opens it to everyone.
+2. Members get a daily quota on every server. Each owner sets it; the default is 200,000 credits a day.
+3. Sharing removes the limits: no quota while your nodes serve (last 7 days), and 10 invites instead of 3 once they have.
+
+To become a member the user needs an Ethereum address, an invite from a member, and a link between this node and that address. The user does the wallet steps in the dashboard ("Link wallet"); do not handle their keys. `GET /members/me` shows the node's membership.
+
+## Errors
+
+- `503 no peer serves model X`: nobody serves that name right now. Check `/v1/models` and use a listed id.
+- `429 busy ...`: every server is full or this node is uninvited on a closed server. The gateway already queued up to 60 seconds; retry later.
+- `429 daily free quota ... used up`: wait until 00:00 UTC, get invited, or share a model.
+- `403 use http://127.0.0.1 or http://localhost`: the gateway only accepts local hostnames. Use 127.0.0.1, not the machine's LAN name.
+- Port 7778 in use: another node is already running (`curl -s 127.0.0.1:7778/status`), or start with `--gateway 127.0.0.1:PORT`.
+
+## Local API
+
+- `GET /v1/models`, `POST /v1/chat/completions`, `POST /v1/completions`, `POST /v1/messages`: inference.
+- `GET /status`: version, peer id, connections, models served, slots in use.
+- `GET /members/me`, `GET /members`: membership. `GET /credits`: credits per account.
+
+## More
+
+- Human-readable guide: https://bitllm.org
+- README: https://github.com/zengjiajun0623/bitllm#readme
+- 中文说明: https://github.com/zengjiajun0623/bitllm/blob/main/JOIN.zh.md
