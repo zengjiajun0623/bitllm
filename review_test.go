@@ -142,3 +142,38 @@ func TestBootstrapAddrsMergedPerPeer(t *testing.T) {
 		t.Fatalf("relays %+v", n.relays)
 	}
 }
+
+// TestReceiptPseudonym: one stable key per server per 30-day epoch, different
+// across servers and epochs, and unrelated to the node key.
+func TestReceiptPseudonym(t *testing.T) {
+	seed := make([]byte, 32)
+	seed[0] = 1
+	k1, _, _ := crypto.GenerateEd25519Key(nil)
+	k2, _, _ := crypto.GenerateEd25519Key(nil)
+	s1, _ := peer.IDFromPrivateKey(k1)
+	s2, _ := peer.IDFromPrivateKey(k2)
+	id := func(server peer.ID, at time.Time) peer.ID {
+		k, err := receiptKey(seed, server, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p, _ := peer.IDFromPrivateKey(k)
+		return p
+	}
+	now := time.Unix(1_800_000_000, 0)
+	if id(s1, now) != id(s1, now.Add(time.Hour)) {
+		t.Fatal("pseudonym changed within an epoch")
+	}
+	if id(s1, now) == id(s2, now) {
+		t.Fatal("same pseudonym for two servers")
+	}
+	if id(s1, now) == id(s1, now.Add(pseudonymEpoch)) {
+		t.Fatal("pseudonym did not rotate across epochs")
+	}
+	other := append([]byte(nil), seed...)
+	other[0] = 2
+	k, _ := receiptKey(other, s1, now)
+	if p, _ := peer.IDFromPrivateKey(k); p == id(s1, now) {
+		t.Fatal("a new seed kept the old pseudonym")
+	}
+}

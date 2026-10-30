@@ -3,6 +3,10 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/ed25519"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,8 +28,11 @@ import (
 // so the record is public and checkable without a chain. Which receipts will
 // count (self-dealing, unverified models) is decided later, from these facts.
 //
-// The client signs with a fresh key for every job, not its node key, so the
-// public record says which server did how much work but not who asked for it.
+// The client signs with a pseudonym, not its node key: one key per server,
+// rotated every 30 days, derived from a private seed. So the public record
+// shows how many distinct clients each server had in a month (a one-client
+// server farming itself stands out) but cannot link a client across servers
+// or across months. Distinct keys are free, so this is a weak signal only.
 const (
 	ReceiptProto = "/bitllm/receipt/1.0.0"
 	SyncProto    = "/bitllm/receipts-sync/1.0.0"
@@ -237,6 +244,28 @@ func (rs *Receipts) countersign(sr *SignedReceipt, from peer.ID) error {
 	return err
 }
 
+const pseudonymEpoch = 30 * 24 * time.Hour
+
+// receiptKey is this client's pseudonym toward server for the epoch containing t.
+func receiptKey(seed []byte, server peer.ID, t time.Time) (crypto.PrivKey, error) {
+	mac := hmac.New(sha256.New, seed)
+	fmt.Fprintf(mac, "bitllm receipt pseudonym v1|%s|%d", server, t.Unix()/int64(pseudonymEpoch/time.Second))
+	return crypto.UnmarshalEd25519PrivateKey(ed25519.NewKeyFromSeed(mac.Sum(nil)))
+}
+
+// loadSeed reads the receipt pseudonym seed, creating it on first run.
+// Deleting the file breaks the link to past pseudonyms without changing the peer id.
+func loadSeed(path string) ([]byte, error) {
+	if b, err := os.ReadFile(path); err == nil && len(b) == 32 {
+		return b, nil
+	}
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return nil, err
+	}
+	return b, os.WriteFile(path, b, 0o600)
+}
+
 // handleReceipt: a client hands us its signed receipt for a job we served.
 func (n *Node) handleReceipt(s network.Stream) {
 	defer s.Close()
@@ -256,9 +285,9 @@ func (n *Node) handleReceipt(s network.Stream) {
 }
 
 // sendReceipt signs a receipt for a job p served us and gives it to p. It
-// signs with a one-off key, so the gossiped receipt does not name this node.
+// signs with its pseudonym for p, so the gossiped receipt does not name this node.
 func (n *Node) sendReceipt(p peer.ID, job, model string, m meter) error {
-	key, _, err := crypto.GenerateEd25519Key(nil)
+	key, err := receiptKey(n.receiptSeed, p, time.Now())
 	if err != nil {
 		return err
 	}

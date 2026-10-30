@@ -161,6 +161,15 @@ func TestNetwork(t *testing.T) {
 	waitCredits(boot, "bootstrap")
 	waitCredits(server, "server")
 
+	// Both receipts carry the client's one pseudonym for this server, not its node id.
+	clients := map[string]bool{}
+	for _, sr := range server.receipts.all {
+		clients[sr.Receipt.Client] = true
+	}
+	if len(clients) != 1 || clients[client.host.ID().String()] {
+		t.Fatalf("receipt clients %v", clients)
+	}
+
 	// A node that joins later catches up from the bootstrap node.
 	late := testNode(t, ctx, Config{Bootstrap: bs})
 	waitCredits(late, "late joiner")
