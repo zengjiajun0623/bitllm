@@ -5,197 +5,247 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BitLLM</title>
 <style>
+/* One job per screen: connect an agent. Models are the first choice, the
+   snippet and test follow; sharing and credits sit quietly below. System
+   fonts only: this page is served offline from your own machine. */
 :root {
-  --bg: #0b0c0e; --panel: #131519; --line: #23262d; --text: #e6e7ea; --muted: #8a8f99;
-  --green: #4ade80; --orange: #f97316; --red: #f87171;
+  --paper: #f2f3f0; --sheet: #fbfbfa; --ink: #15171a; --sub: #5c6168; --rule: #d8dbd5;
+  --green: #15803d; --orange: #c2410c; --red: #b91c1c;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
-    --bg: #f6f6f4; --panel: #ffffff; --line: #e3e3df; --text: #17181a; --muted: #6b6f76;
-    --green: #16a34a; --orange: #ea580c;
-  }
-}
+@media (prefers-color-scheme: dark) { :root {
+  --paper: #0f1110; --sheet: #151816; --ink: #e7e9e5; --sub: #8e958f; --rule: #272b28;
+  --green: #4ade80; --orange: #fb923c; --red: #f87171; color-scheme: dark } }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--text);
-  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
-.wrap { max-width: 1080px; margin: 0 auto; padding: 20px 16px 48px; }
-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
-.mark { width: 22px; height: 22px; display: grid; grid-template-columns: 1fr 1fr; gap: 3px; }
-.mark i { display: block; background: var(--text); border-radius: 2px; }
-.mark i:nth-child(1) { background: var(--green); }
-.mark i:nth-child(4) { background: var(--orange); }
-h1 { font-size: 18px; margin: 0; letter-spacing: .2px; }
-.tag { color: var(--muted); font-size: 13px; }
-.id { margin-left: auto; font-family: var(--mono); font-size: 12px; color: var(--muted);
-  border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; cursor: pointer;
-  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
-.stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; min-width: 0; }
-.stat b { display: block; font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.stat span { color: var(--muted); font-size: 12px; }
-.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-right: 6px; vertical-align: 1px; }
-.dot.on { background: var(--green); }
-.grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; align-items: start; }
-.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; min-width: 0; }
-.panel + .panel { margin-top: 16px; }
-.panel h2 { font-size: 13px; font-weight: 600; margin: 0 0 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; }
-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; table-layout: fixed; }
-td, th { text-align: left; padding: 7px 4px; border-top: 1px solid var(--line); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-th { color: var(--muted); font-weight: 500; font-size: 12px; border-top: 0; }
-td.n, th.n { text-align: right; width: 76px; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.55 var(--sans); }
+.wrap { max-width: 880px; margin: 0 auto; padding: 0 max(16px, env(safe-area-inset-right)) 56px max(16px, env(safe-area-inset-left)); }
+:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+button { font: inherit; cursor: pointer; }
+code, .mono { font-family: var(--mono); font-size: 13px; }
+
+header { display: flex; align-items: center; gap: 14px 20px; flex-wrap: wrap; padding-block: 20px; border-bottom: 1px solid var(--rule); }
+.brand { display: flex; align-items: center; gap: 9px; font-weight: 800; font-size: 17px; letter-spacing: -.2px; }
+.mark { width: 18px; height: 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 3px; }
+.mark i { background: var(--ink); } .mark i:first-child { background: var(--green); } .mark i:last-child { background: var(--orange); }
+.net { display: flex; align-items: center; gap: 8px; color: var(--sub); font-size: 14px; }
+.net i { width: 8px; height: 8px; background: var(--sub); }
+.net.on i { background: var(--green); }
+.id { margin-left: auto; font: 12px var(--mono); color: var(--sub); background: none; border: 1px solid var(--rule); padding: 4px 8px; }
+.id:hover { color: var(--ink); border-color: var(--ink); }
+
+h1 { font-size: 26px; line-height: 1.2; font-weight: 800; letter-spacing: -.4px; margin: 36px 0 6px; }
+.lede { color: var(--sub); margin: 0 0 26px; max-width: 60ch; }
+.step { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 0 14px; margin-bottom: 26px; }
+.step > b { font: 600 13px/26px var(--mono); color: var(--sub); }
+.step h2 { font-size: 15px; font-weight: 650; margin: 2px 0 10px; }
+
+.models { border: 1px solid var(--rule); background: var(--sheet); }
+.model { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 11px 14px; cursor: pointer; }
+.model + .model { border-top: 1px solid var(--rule); }
+.model input { margin: 0; accent-color: var(--green); }
+.model .name { font: 14px var(--mono); overflow-wrap: anywhere; }
+.model .meta { font-size: 13px; color: var(--sub); white-space: nowrap; display: flex; gap: 10px; align-items: center; }
+.tag { font-size: 11px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase; color: var(--orange); border: 1px solid currentColor; padding: 1px 5px; }
+.model:has(input:checked) { background: var(--paper); }
+.model:has(input:checked) .name { font-weight: 600; }
+.empty { padding: 14px; color: var(--sub); }
+
+.tabs { display: flex; flex-wrap: wrap; border-bottom: 1px solid var(--rule); margin-bottom: 0; }
+.tabs button { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--sub); padding: 8px 12px 9px; margin-bottom: -1px; }
+.tabs button:hover { color: var(--ink); }
+.tabs button.on { color: var(--ink); border-bottom-color: var(--ink); font-weight: 600; }
+.snip { position: relative; margin: 0; background: var(--sheet); border: 1px solid var(--rule); border-top: 0;
+  padding: 42px 16px 14px; font: 13px/1.7 var(--mono); white-space: pre; overflow-x: auto; }
+.copy { position: absolute; top: 8px; right: 8px; font-size: 12px; padding: 5px 9px; background: var(--paper); color: var(--sub); border: 1px solid var(--rule); }
+.copy:hover { color: var(--ink); border-color: var(--ink); }
+
+.test { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; }
+.btn { background: var(--ink); color: var(--paper); border: 1.5px solid var(--ink); padding: 9px 16px; font-weight: 600; }
+.btn:hover { background: transparent; color: var(--ink); }
+.btn:disabled { opacity: .5; cursor: default; }
+.result { font-size: 14px; color: var(--sub); }
+.ok { color: var(--green); font-weight: 600; } .bad { color: var(--red); }
+.note { font-size: 13px; color: var(--sub); margin: 12px 0 0; max-width: 64ch; }
+
+.lower { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid var(--rule); margin-top: 40px; }
+.lower > div { padding: 24px 24px 8px 0; min-width: 0; }
+.lower > div + div { padding-left: 24px; border-left: 1px solid var(--rule); }
+.lower h3 { font-size: 12px; font-weight: 600; letter-spacing: .8px; text-transform: uppercase; color: var(--sub); margin: 0 0 12px; }
+.big { font-size: 30px; font-weight: 800; letter-spacing: -.5px; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.big small { font-size: 14px; font-weight: 500; color: var(--sub); letter-spacing: 0; margin-left: 6px; }
+.shared { font: 14px var(--mono); color: var(--orange); overflow-wrap: anywhere; }
+.cmd { font: 12.5px/1.6 var(--mono); background: var(--sheet); border: 1px solid var(--rule); padding: 10px 12px; white-space: pre; overflow-x: auto; margin: 10px 0 0; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.row input { flex: 1; min-width: 140px; font: inherit; color: var(--ink); background: var(--sheet); border: 1px solid var(--rule); padding: 8px 10px; }
+.btn.line { background: transparent; color: var(--ink); }
+.btn.line:hover { border-color: var(--green); color: var(--green); }
+
+details { margin-top: 28px; border-top: 1px solid var(--rule); }
+summary { cursor: pointer; padding: 14px 0; color: var(--sub); font-size: 14px; }
+summary:hover { color: var(--ink); }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; table-layout: fixed; font-size: 14px; }
+th, td { text-align: left; padding: 8px 6px 8px 0; border-top: 1px solid var(--rule); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+th { color: var(--sub); font-weight: 500; font-size: 12px; border-top: 0; }
+.n { text-align: right; width: 84px; }
 .me { color: var(--green); }
-.mono { font-family: var(--mono); font-size: 12px; }
-.empty { color: var(--muted); padding: 8px 4px; }
-.row input { flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
-.row select { flex: 1; min-width: 0; max-width: 420px; }
-select, button { font: inherit; color: var(--text); background: var(--bg);
-  border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
-button { cursor: pointer; border-color: var(--green); color: var(--green); background: transparent; white-space: nowrap; }
-button:disabled { opacity: .5; cursor: default; }
-.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
-.tabs button { border-color: var(--line); color: var(--muted); padding: 5px 10px; }
-.tabs button.on { border-color: var(--text); color: var(--text); }
-.row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
-.snip { position: relative; background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
-  padding: 12px 64px 12px 12px; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-all; margin: 0; }
-.snip button { position: absolute; top: 8px; right: 8px; padding: 3px 8px; font-size: 12px; }
-.result { margin-top: 10px; font-size: 13px; min-height: 20px; }
-.ok { color: var(--green); } .bad { color: var(--red); }
-.hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
-code { font-family: var(--mono); font-size: 12px; }
-@media (max-width: 760px) {
-  .stats { grid-template-columns: repeat(2, 1fr); }
-  .grid { grid-template-columns: 1fr; }
+
+@media (max-width: 640px) {
+  .lower { grid-template-columns: minmax(0, 1fr); }
+  .lower > div { padding-right: 0; }
+  .lower > div + div { padding-left: 0; border-left: 0; border-top: 1px solid var(--rule); }
   .id { margin-left: 0; }
+  .step { grid-template-columns: minmax(0, 1fr); }
+  .step > b { line-height: 1.4; }
 }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <div class="mark"><i></i><i></i><i></i><i></i></div>
-    <h1>BitLLM</h1>
-    <span class="tag">BitTorrent for local LLMs</span>
-    <span class="id" id="peerid" title="your peer id, click to copy">connecting…</span>
+    <div class="brand"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>BitLLM</div>
+    <div class="net" id="net"><i></i><span id="net-text">Connecting…</span></div>
+    <button class="id" id="peerid" type="button" title="Your peer id. Click to copy.">…</button>
   </header>
 
-  <div class="stats">
-    <div class="stat"><b id="s-net"><span class="dot"></span>…</b><span id="s-net-sub">network</span></div>
-    <div class="stat"><b id="s-models">0</b><span>models online</span></div>
-    <div class="stat"><b id="s-serving">0</b><span>models you share</span></div>
-    <div class="stat"><b id="s-credits" class="me">0</b><span>your credits</span></div>
+  <h1>Connect your agent</h1>
+  <p class="lede">This page runs on your machine. Your agent talks to it at <code id="base-url"></code>, and it answers from whichever peer serves the model.</p>
+
+  <div class="step">
+    <b>1</b>
+    <div>
+      <h2>Pick a model</h2>
+      <div class="models" id="models" role="radiogroup" aria-label="Models on the network"><div class="empty">Looking for peers…</div></div>
+    </div>
   </div>
 
-  <div class="grid">
+  <div class="step">
+    <b>2</b>
     <div>
-      <div class="panel">
-        <h2>Connect your agent</h2>
-        <div class="row"><select id="model"></select></div>
-        <div class="tabs" id="tabs"></div>
-        <pre class="snip" id="snip"></pre>
-        <div class="row" style="margin:10px 0 0;flex-wrap:wrap"><button id="test" type="button">Test connection</button><span class="result" id="result"></span></div>
-        <div class="hint">The peer that serves a request can read it, so don't send secrets.
-          Models you share yourself are answered by your own server and never leave this machine.</div>
+      <h2>Paste this into your tool</h2>
+      <div class="tabs" id="tabs" role="tablist"></div>
+      <pre class="snip" id="snip"></pre>
+    </div>
+  </div>
+
+  <div class="step">
+    <b>3</b>
+    <div>
+      <h2>Check it answers</h2>
+      <div class="test"><button class="btn" id="test" type="button">Send a test message</button><span class="result" id="result"></span></div>
+      <p class="note">The peer that serves a request can read it, so don't send secrets. Models you share yourself are answered by your own server and never leave this machine.</p>
+    </div>
+  </div>
+
+  <div class="lower">
+    <div>
+      <h3>Sharing</h3>
+      <div id="share-on" hidden>
+        <div class="shared" id="shared"></div>
+        <p class="note" style="margin-top:8px">Peers can use these now. Every job you serve earns credits.</p>
+      </div>
+      <div id="share-off" hidden>
+        <p class="note" style="margin-top:0">You're not sharing a model. If you run vLLM, SGLang, llama.cpp or Ollama, restart BitLLM pointed at it:</p>
+        <div class="cmd">bitllm --upstream http://localhost:8000/v1 \
+  --model your-name=deepseek-v4.1-flash-1017</div>
       </div>
     </div>
     <div>
-      <div class="panel">
-        <h2>Your account</h2>
-        <div id="acct-linked" hidden>
-          <div><b id="acct-name"></b> <span class="mono" id="acct-addr" style="color:var(--muted)"></span></div>
-          <div class="hint">Credits from all your linked machines add up here. Link another machine with the same wallet or <code>bitllm account link</code>.</div>
+      <h3>Credits</h3>
+      <div class="big"><span id="my-credits">0</span><small id="my-jobs">0 jobs served</small></div>
+      <div id="acct-linked" hidden>
+        <p class="note">Account <b id="acct-name"></b> <span class="mono" id="acct-addr"></span>. Credits from all its machines add up here.</p>
+      </div>
+      <div id="acct-unlinked" hidden>
+        <p class="note">Link this node to an Ethereum address so credits from all your machines add up. It signs a message only: no transaction, no gas.</p>
+        <div class="row">
+          <input id="acct-input" placeholder="Display name (optional)" maxlength="32" aria-label="Display name">
+          <button class="btn line" id="acct-link" type="button">Link wallet</button>
         </div>
-        <div id="acct-unlinked" hidden>
-          <div class="hint" style="margin-top:0">Link this node to an Ethereum address so credits from all your machines add up under one account. It only signs a message: no transaction, no gas, nothing on chain.</div>
-          <div class="row" style="margin:10px 0 0;flex-wrap:wrap">
-            <input id="acct-input" placeholder="display name (optional)" maxlength="32">
-            <button id="acct-link" type="button">Link wallet</button>
-          </div>
-          <div class="result" id="acct-result"></div>
-        </div>
-      </div>
-      <div class="panel">
-        <h2>Models on the network</h2>
-        <table><thead><tr><th>model</th><th class="n">nodes</th></tr></thead><tbody id="models"></tbody></table>
-      </div>
-      <div class="panel">
-        <h2>Credits for serving</h2>
-        <table><thead><tr><th>account</th><th class="n">jobs</th><th class="n">credits</th></tr></thead><tbody id="credits"></tbody></table>
-        <div class="hint">From signed receipts gossiped across the network. Every node computes the same table.</div>
-      </div>
-      <div class="panel" id="share" hidden>
-        <h2>Share your model, earn credits</h2>
-        <div class="hint" style="margin-top:0">Run your OpenAI-compatible server (vLLM, SGLang, llama.cpp, Ollama...), then restart BitLLM with it:</div>
-        <pre class="mono" style="white-space:pre-wrap;margin:8px 0 0">bitllm --upstream http://localhost:8000/v1 \
-  --model your-name=deepseek-v4.1-flash-1017</pre>
+        <p class="note" id="acct-result"></p>
       </div>
     </div>
   </div>
+
+  <details>
+    <summary>Credits across the network</summary>
+    <table><thead><tr><th>Account</th><th class="n">Jobs</th><th class="n">Credits</th></tr></thead><tbody id="credits"></tbody></table>
+    <p class="note">Counted from receipts signed by both sides and gossiped to every node. Every node computes the same table.</p>
+  </details>
 </div>
 <script>
 const $ = id => document.getElementById(id);
 const short = id => id ? id.slice(0, 8) + "…" + id.slice(-6) : "";
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-let me = "";
+const base = location.origin;
+$("base-url").textContent = base + "/v1";
+let me = "", model = "", modelsKey = "";
+try { model = localStorage.getItem("bitllm-model") || ""; } catch {}
 
 async function refresh() {
   try {
     const [st, models, credits, acct] = await Promise.all([
       fetch("/status").then(r => r.json()),
-      
       fetch("/v1/models").then(r => r.json()),
       fetch("/credits").then(r => r.json()),
       fetch("/account").then(r => r.json()),
     ]);
     me = st.id;
     $("peerid").textContent = short(me);
-    const peers = new Set(st.conns.map(c => c.peer)).size;
-    $("s-net").innerHTML = `<span class="dot ${peers ? "on" : ""}"></span>${peers} peer${peers === 1 ? "" : "s"}`;
-    $("s-models").textContent = models.data.length;
-    $("s-serving").textContent = st.serving.length;
+    const byPeer = {};
+    for (const c of st.conns) (byPeer[c.peer] ||= []).push(c);
+    const peers = Object.keys(byPeer).length;
+    const relayed = Object.values(byPeer).filter(cs => !cs.some(c => !c.relayed)).length;
+    $("net").classList.toggle("on", peers > 0);
+    $("net-text").textContent = peers
+      ? `Connected to ${peers} peer${peers === 1 ? "" : "s"}${relayed ? `, ${relayed} via relay` : ""}`
+      : "No peers yet";
+
+    const ids = models.data.map(m => m.id);
+    if (!ids.includes(model)) model = ids[0] || "";
+    const key = JSON.stringify(models.data) + st.serving.join();
+    if (key !== modelsKey) {
+      modelsKey = key;
+      $("models").innerHTML = models.data.length ? models.data.map(m => `
+        <label class="model"><input type="radio" name="model" value="${esc(m.id)}" ${m.id === model ? "checked" : ""}>
+          <span class="name">${esc(m.id)}</span>
+          <span class="meta">${st.serving.includes(m.id) ? `<span class="tag">yours</span>` : ""}${m.nodes} node${m.nodes === 1 ? "" : "s"}</span></label>`).join("")
+        : `<div class="empty">No models on the network yet. Waiting for peers…</div>`;
+      renderSnip();
+    }
+
+    $("share-on").hidden = !st.serving.length;
+    $("share-off").hidden = !!st.serving.length;
+    $("shared").textContent = st.serving.join("\n");
+
     const myOwner = acct.owner || "";
     const isMine = c => (myOwner && c.owner === myOwner) || c.nodes.some(x => x.node === me);
     const mine = credits.find(isMine);
-    $("s-credits").textContent = (mine ? mine.credits : 0).toLocaleString();
+    $("my-credits").textContent = (mine ? mine.credits : 0).toLocaleString();
+    const jobs = mine ? mine.jobs : 0;
+    $("my-jobs").textContent = `${jobs.toLocaleString()} job${jobs === 1 ? "" : "s"} served`;
     $("acct-linked").hidden = !myOwner;
     $("acct-unlinked").hidden = !!myOwner;
     if (myOwner) {
-      $("acct-name").textContent = acct.claim.name || "Unnamed";
+      $("acct-name").textContent = acct.claim.name || "unnamed";
       $("acct-addr").textContent = myOwner.slice(0, 6) + "…" + myOwner.slice(-4);
       $("acct-addr").title = myOwner;
     } else if (!window.ethereum) {
-      $("acct-link").hidden = true;
-      $("acct-input").hidden = true;
+      $("acct-link").hidden = $("acct-input").hidden = true;
       $("acct-result").innerHTML = `No browser wallet found. In a terminal: <code>bitllm account new --name you</code>`;
     }
-
-    $("models").innerHTML = models.data.length ? models.data.map(m =>
-      `<tr><td class="${st.serving.includes(m.id) ? "me" : ""}" title="${esc(m.id)}">${esc(m.id)}</td><td class="n">${m.nodes}</td></tr>`).join("")
-      : `<tr><td class="empty" colspan="2">No models yet. Waiting for peers…</td></tr>`;
-    const sel = $("model"), cur = sel.value;
-    sel.innerHTML = models.data.map(m => `<option>${esc(m.id)}</option>`).join("");
-    if (models.data.some(m => m.id === cur)) sel.value = cur;
-    if (sel.value !== cur || !$("snip").textContent) renderSnip();
 
     $("credits").innerHTML = credits.length ? credits.map(c => {
       const label = c.owner ? (c.name || c.owner.slice(0, 6) + "…" + c.owner.slice(-4)) : short(c.nodes[0].node);
       const title = (c.owner || c.nodes[0].node) + ` · ${c.nodes.length} node${c.nodes.length === 1 ? "" : "s"}`;
-      return `<tr><td class="${c.owner ? "" : "mono "}${isMine(c) ? "me" : ""}" title="${esc(title)}">${esc(isMine(c) ? label + " (you)" : label)}</td><td class="n">${c.jobs}</td><td class="n">${c.credits.toLocaleString()}</td></tr>`;
-    }).join("")
-      : `<tr><td class="empty" colspan="3">No receipts yet.</td></tr>`;
-
-    const byPeer = {};
-    for (const c of st.conns) (byPeer[c.peer] ||= []).push(c);
-    const relayed = Object.values(byPeer).filter(cs => !cs.some(c => !c.relayed)).length;
-    $("s-net-sub").textContent = relayed ? `network · ${relayed} via relay` : "network";
-    $("share").hidden = st.serving.length > 0;
+      return `<tr><td class="${c.owner ? "" : "mono "}${isMine(c) ? "me" : ""}" title="${esc(title)}">${esc(isMine(c) ? label + " (you)" : label)}</td><td class="n">${c.jobs.toLocaleString()}</td><td class="n">${c.credits.toLocaleString()}</td></tr>`;
+    }).join("") : `<tr><td colspan="3" style="color:var(--sub)">No receipts yet.</td></tr>`;
   } catch (e) {
-    $("s-net").innerHTML = `<span class="dot"></span>offline`;
+    $("net").classList.remove("on");
+    $("net-text").textContent = "BitLLM is not running";
   }
 }
 
-const base = location.origin;
 const agents = {
   "Claude Code": m => `export ANTHROPIC_BASE_URL=${base}
 export ANTHROPIC_API_KEY=bitllm
@@ -224,14 +274,13 @@ try { tab = localStorage.getItem("bitllm-tab") || tab; } catch {}
 if (!agents[tab]) tab = "Claude Code";
 
 function renderSnip() {
-  const m = $("model").value || "MODEL";
+  const m = model || "MODEL";
   $("tabs").innerHTML = Object.keys(agents).map(k =>
-    `<button type="button" class="${k === tab ? "on" : ""}" data-k="${esc(k)}">${esc(k)}</button>`).join("");
-  $("snip").innerHTML = `<button type="button" id="copy">Copy</button>` + esc(agents[tab](m));
+    `<button type="button" role="tab" aria-selected="${k === tab}" class="${k === tab ? "on" : ""}" data-k="${esc(k)}">${esc(k)}</button>`).join("");
+  $("snip").innerHTML = `<button type="button" class="copy" id="copy">Copy</button>` + esc(agents[tab](m));
   $("copy").onclick = () => {
-    navigator.clipboard && navigator.clipboard.writeText(agents[tab](m));
-    $("copy").textContent = "Copied";
-    setTimeout(() => { const c = $("copy"); if (c) c.textContent = "Copy"; }, 1200);
+    const done = () => { $("copy").textContent = "Copied"; setTimeout(() => { const c = $("copy"); if (c) c.textContent = "Copy"; }, 1200); };
+    navigator.clipboard ? navigator.clipboard.writeText(agents[tab](m)).then(done, () => {}) : null;
   };
 }
 $("tabs").onclick = e => {
@@ -241,21 +290,24 @@ $("tabs").onclick = e => {
   try { localStorage.setItem("bitllm-tab", k); } catch {}
   renderSnip();
 };
-$("model").onchange = renderSnip;
+$("models").onchange = e => {
+  model = e.target.value;
+  try { localStorage.setItem("bitllm-model", model); } catch {}
+  renderSnip();
+};
 
 $("test").onclick = async () => {
-  const m = $("model").value;
-  if (!m) { $("result").innerHTML = `<span class="bad">No models on the network yet.</span>`; return; }
+  if (!model) { $("result").innerHTML = `<span class="bad">No models on the network yet.</span>`; return; }
   $("test").disabled = true;
-  $("result").textContent = "Testing…";
+  $("result").textContent = "Waiting for an answer…";
   const t0 = performance.now();
   try {
     const r = await fetch("/v1/chat/completions", { method: "POST",
-      body: JSON.stringify({ model: m, max_tokens: 16, messages: [{ role: "user", content: "Reply with: ok" }] }) });
+      body: JSON.stringify({ model, max_tokens: 16, messages: [{ role: "user", content: "Reply with: ok" }] }) });
     const j = await r.json();
     if (!r.ok) throw new Error((j.error && j.error.message) || r.statusText);
     const peer = r.headers.get("X-Bitllm-Peer");
-    $("result").innerHTML = `<span class="ok">Works.</span> ${((performance.now() - t0) / 1000).toFixed(1)} s, answered by ${peer ? "peer " + short(peer) : "your own server"}.`;
+    $("result").innerHTML = `<span class="ok">It works.</span> ${((performance.now() - t0) / 1000).toFixed(1)} s, answered by ${peer ? "peer " + esc(short(peer)) : "your own server"}.`;
   } catch (e) {
     $("result").innerHTML = `<span class="bad">${esc(e.message)}</span>`;
   }
@@ -283,6 +335,7 @@ $("acct-link").onclick = async () => {
   $("acct-link").disabled = false;
 };
 $("peerid").onclick = () => navigator.clipboard && navigator.clipboard.writeText(me);
+renderSnip();
 refresh();
 setInterval(refresh, 3000);
 </script>

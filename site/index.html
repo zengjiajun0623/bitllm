@@ -1,0 +1,280 @@
+<title>BitLLM</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="BitTorrent for local LLMs. Share the model on your own GPU, use the ones on everyone else's.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,500..800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one narrow column of plain sections on a neutral sheet; the 2x2 node mark
+   is the only motif, and the terminal is the hero because the product is a binary. */
+:root {
+  --paper: #f2f3f0; --sheet: #fbfbfa; --ink: #15171a; --sub: #5c6168; --rule: #d8dbd5;
+  --green: #15803d; --orange: #c2410c; --term: #15171a; --term-ink: #d9ddd6; --term-sub: #7d847e;
+  --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --body: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --paper: #0f1110; --sheet: #151816; --ink: #e7e9e5; --sub: #8e958f; --rule: #272b28;
+  --green: #4ade80; --orange: #fb923c; --term: #0a0b0a; --term-ink: #d9ddd6; --term-sub: #6f766f;
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --paper: #0f1110; --sheet: #151816; --ink: #e7e9e5; --sub: #8e958f; --rule: #272b28;
+  --green: #4ade80; --orange: #fb923c; --term: #0a0b0a; --term-ink: #d9ddd6; --term-sub: #6f766f;
+  color-scheme: dark }
+
+* { box-sizing: border-box; }
+body { background: var(--paper); color: var(--ink); font: 16px/1.6 var(--body); }
+a { color: inherit; text-underline-offset: 3px; text-decoration-color: var(--rule); }
+a:hover { text-decoration-color: currentColor; }
+:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; border-radius: 2px; }
+.wrap { max-width: 1040px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+/* header */
+.top { display: flex; align-items: center; gap: 24px; padding-block: 22px; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 10px; text-decoration: none;
+  font: 700 19px/1 var(--display); font-stretch: 112%; letter-spacing: -.2px; }
+.mark { width: 20px; height: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 3px; }
+.mark i { background: var(--ink); }
+.mark i:first-child { background: var(--green); }
+.mark i:last-child { background: var(--orange); }
+.top nav { margin-left: auto; display: flex; gap: 22px; font-size: 15px; color: var(--sub); flex-wrap: wrap; }
+.top nav a { text-decoration: none; }
+.top nav a:hover { color: var(--ink); }
+
+/* hero */
+.hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 56px; align-items: center; padding-block: 56px 72px; }
+h1 { font: 800 clamp(44px, 7.2vw, 80px)/.94 var(--display); font-stretch: 68%; letter-spacing: -1px;
+  margin: 0 0 22px; text-transform: uppercase; text-wrap: balance; }
+h1 span { color: var(--green); }
+.lede { font-size: 19px; line-height: 1.5; color: var(--sub); margin: 0 0 30px; max-width: 30em; }
+.lede b { color: var(--ink); font-weight: 500; }
+.dl { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px; font: 600 15px/1 var(--body);
+  text-decoration: none; border: 1.5px solid var(--ink); background: var(--ink); color: var(--paper); }
+.btn:hover { background: transparent; color: var(--ink); }
+.btn.ghost { background: transparent; color: var(--ink); }
+.btn.ghost:hover { border-color: var(--green); color: var(--green); }
+.os { font-size: 13px; color: var(--sub); width: 100%; margin-top: 4px; }
+.os a { margin-right: 12px; }
+
+.term { background: var(--term); color: var(--term-ink); font: 13px/1.75 var(--mono); padding: 18px 20px 20px;
+  overflow-x: auto; min-width: 0; }
+.term .bar { display: flex; gap: 6px; margin-bottom: 14px; }
+.term .bar i { width: 9px; height: 9px; background: #2c302d; }
+.term pre { margin: 0; white-space: pre; }
+.term .p { color: var(--term-sub); user-select: none; }
+.term .c { color: #fff; }
+.term .g { color: #4ade80; } .term .o { color: #fb923c; } .term .s { color: var(--term-sub); }
+
+/* sections */
+section { border-top: 1px solid var(--rule); padding-block: 64px; }
+.sec { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 40px; }
+h2 { font: 700 15px/1.3 var(--display); font-stretch: 100%; letter-spacing: .9px; text-transform: uppercase; margin: 4px 0 0; color: var(--sub); }
+h3 { font: 700 28px/1.15 var(--display); font-stretch: 88%; margin: 0 0 14px; text-wrap: balance; letter-spacing: -.2px; }
+p { margin: 0 0 14px; max-width: 64ch; }
+.muted { color: var(--sub); }
+
+/* two ways in */
+.ways { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1px solid var(--rule); background: var(--sheet); }
+.way { padding: 26px 26px 28px; min-width: 0; display: flex; flex-direction: column; }
+.way + .way { border-left: 1px solid var(--rule); }
+.way .k { font: 500 12px/1 var(--mono); letter-spacing: .6px; text-transform: uppercase; display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+.way .k i { width: 9px; height: 9px; display: inline-block; }
+.way.use .k { color: var(--green); } .way.use .k i { background: var(--green); }
+.way.share .k { color: var(--orange); } .way.share .k i { background: var(--orange); }
+.way p { font-size: 15px; color: var(--sub); }
+.code { position: relative; margin-top: auto; background: var(--paper); border: 1px solid var(--rule);
+  font: 13px/1.7 var(--mono); padding: 40px 14px 12px; overflow-x: auto; white-space: pre; }
+.copy { position: absolute; top: 7px; right: 7px; font: 500 12px/1 var(--body); padding: 6px 9px; cursor: pointer;
+  background: var(--sheet); color: var(--sub); border: 1px solid var(--rule); }
+.copy:hover { color: var(--ink); border-color: var(--ink); }
+
+/* path diagram */
+.path { display: grid; grid-template-columns: auto 1fr auto 1fr auto; align-items: center; gap: 0; margin: 8px 0 26px; }
+.node { border: 1.5px solid var(--ink); padding: 12px 14px; font: 13px/1.35 var(--mono); background: var(--sheet); }
+.node b { display: block; font: 600 14px/1.3 var(--body); margin-bottom: 2px; }
+.node.peer { border-color: var(--orange); }
+.wire { height: 1.5px; background: var(--ink); position: relative; margin: 0 8px; min-width: 24px; }
+.wire::after { content: ""; position: absolute; right: -1px; top: -4px; border-left: 7px solid var(--ink); border-top: 4.5px solid transparent; border-bottom: 4.5px solid transparent; }
+.wire span { position: absolute; left: 50%; transform: translateX(-50%); bottom: 8px; font: 11px/1 var(--mono); color: var(--sub); white-space: nowrap; }
+.facts { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 40px; }
+.facts div { font-size: 15px; }
+.facts b { display: block; font-weight: 600; margin-bottom: 2px; }
+.facts span { color: var(--sub); }
+
+/* models */
+.tbl { overflow-x: auto; border: 1px solid var(--rule); background: var(--sheet); }
+table { border-collapse: collapse; width: 100%; font-size: 15px; }
+th, td { text-align: left; padding: 12px 16px; border-top: 1px solid var(--rule); vertical-align: top; }
+th { border-top: 0; font: 500 12px/1 var(--mono); letter-spacing: .6px; text-transform: uppercase; color: var(--sub); padding-top: 14px; }
+td code { font: 13px var(--mono); white-space: nowrap; }
+
+/* honest list */
+.know { list-style: none; padding: 0; margin: 0; display: grid; gap: 0; border-top: 1px solid var(--rule); }
+.know li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--rule); font-size: 15px; }
+.know li::before { content: ""; width: 9px; height: 9px; background: var(--orange); margin-top: 8px; }
+.know b { font-weight: 600; }
+
+footer { border-top: 1px solid var(--rule); padding-block: 28px 40px; font-size: 13px; color: var(--sub);
+  display: flex; flex-wrap: wrap; gap: 8px 22px; }
+footer code { font: 12px var(--mono); }
+
+@media (max-width: 860px) {
+  .hero { grid-template-columns: minmax(0, 1fr); gap: 36px; padding-block: 32px 56px; }
+  .sec { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .ways { grid-template-columns: minmax(0, 1fr); }
+  .way + .way { border-left: 0; border-top: 1px solid var(--rule); }
+  .facts { grid-template-columns: minmax(0, 1fr); }
+  .path { grid-template-columns: minmax(0, 1fr); justify-items: start; gap: 0; }
+  .wire { width: 1.5px; height: 30px; min-width: 0; margin: 4px 0 4px 22px; }
+  .wire::after { right: auto; top: auto; bottom: -1px; left: -4px; border-left: 4.5px solid transparent; border-right: 4.5px solid transparent; border-top: 7px solid var(--ink); border-bottom: 0; }
+  .wire span { left: 14px; bottom: auto; top: 50%; transform: translateY(-50%); }
+  section { padding-block: 48px; }
+  .top nav { gap: 16px; }
+  thead { display: none; }
+  tr, td { display: block; }
+  td { border-top: 0; padding: 0 16px 14px; }
+  td:first-child { border-top: 1px solid var(--rule); padding-top: 14px; padding-bottom: 4px; }
+  tbody tr:first-child td:first-child { border-top: 0; }
+}
+@media (max-width: 480px) { .top nav a.opt { display: none; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="#"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>BitLLM</a>
+    <nav>
+      <a href="#start">Get started</a>
+      <a class="opt" href="#how">How it works</a>
+      <a href="https://github.com/zengjiajun0623/bitllm/blob/main/JOIN.zh.md">中文</a>
+      <a href="https://github.com/zengjiajun0623/bitllm">GitHub</a>
+    </nav>
+  </header>
+
+  <div class="hero">
+    <div>
+      <h1>BitTorrent for <span>local LLMs</span></h1>
+      <p class="lede">Share the model running on your own GPU. Use the ones running on everyone else's.
+        <b>One binary, no account, no port forwarding, no company in the middle.</b></p>
+      <div class="dl">
+        <a class="btn" href="https://github.com/zengjiajun0623/bitllm/releases/latest">Download</a>
+        <a class="btn ghost" href="#start">Two commands to start</a>
+        <div class="os">macOS arm64 · Linux amd64 / arm64 · Windows · MIT licensed</div>
+      </div>
+    </div>
+    <div class="term" aria-label="What starting a node looks like">
+      <div class="bar"><i></i><i></i><i></i></div>
+<pre><span class="p">$ </span><span class="c">./bitllm --upstream http://localhost:8000/v1 \
+    --model ds=deepseek-v4.1-flash-1017</span>
+<span class="s">bitllm v0.1.3, peer id 12D3KooWFrM6…YC3w7RWE</span>
+<span class="s">synced 10 receipts from boot.bitllm.org</span>
+<span class="o">sharing</span> deepseek-v4.1-flash-1017 from :8000
+<span class="g">gateway</span> http://127.0.0.1:7778/v1
+
+<span class="p">$ </span><span class="c">curl localhost:7778/v1/models</span>
+{"data":[{"id":"deepseek-v4.1-flash-1017","nodes":3},
+         {"id":"deepseek-v4.1-flash-1017-heretic","nodes":2}]}</pre>
+    </div>
+  </div>
+
+  <section id="start">
+    <div class="sec">
+      <h2>Get started</h2>
+      <div>
+        <div class="ways">
+          <div class="way use">
+            <div class="k"><i></i>Use the network</div>
+            <h3>Point your agent at localhost</h3>
+            <p>Run the binary with no flags. It joins the network and opens an OpenAI and Anthropic
+              compatible endpoint on your machine. Claude Code, Cline, Aider, OpenCode and anything
+              that takes a base URL work unchanged.</p>
+            <div class="code"><button class="copy" type="button">Copy</button>./bitllm
+export OPENAI_BASE_URL=http://127.0.0.1:7778/v1</div>
+          </div>
+          <div class="way share">
+            <div class="k"><i></i>Share your model</div>
+            <h3>Already running vLLM or llama.cpp?</h3>
+            <p>Point BitLLM at your server and map its model to a network name. Peers reach you through
+              hole punching or a relay. You choose how many requests to serve at once.</p>
+            <div class="code"><button class="copy" type="button">Copy</button>./bitllm --upstream http://localhost:8000/v1 \
+  --model your-name=deepseek-v4.1-flash-1017 \
+  --concurrency 2</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how">
+    <div class="sec">
+      <h2>How it works</h2>
+      <div>
+        <h3>Every node is the same program</h3>
+        <p class="muted">There is no server that routes your requests. Nodes find each other through a
+          Kademlia DHT, hear which models are online over gossip, and stream answers peer to peer.</p>
+        <div class="path" role="img" aria-label="Your agent calls the local gateway, which streams from a peer directly or through a relay">
+          <div class="node"><b>Your agent</b>Claude Code, Cline…</div>
+          <div class="wire"><span>HTTP</span></div>
+          <div class="node"><b>Gateway</b>127.0.0.1:7778</div>
+          <div class="wire"><span>libp2p, encrypted</span></div>
+          <div class="node peer"><b>A peer's GPU</b>vLLM, SGLang, Ollama</div>
+        </div>
+        <div class="facts">
+          <div><b>Behind NAT is fine</b><span>A relay connects you first, then hole punching upgrades to a direct link when the routers allow it.</span></div>
+          <div><b>Your own model stays local</b><span>If you share a model, your gateway answers it from your own server. It never leaves your machine.</span></div>
+          <div><b>Credits for serving</b><span>Each job ends with a receipt signed by both sides and gossiped to every node. Anyone can recount the totals.</span></div>
+          <div><b>Busy peers queue, not fail</b><span>When every server for a model is full, your request waits up to a minute for a free slot.</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec">
+      <h2>Models</h2>
+      <div>
+        <p class="muted">One network name means one set of weights. Use these names when you share, or open a pull request to add a row first.</p>
+        <div class="tbl"><table>
+          <thead><tr><th>Network name</th><th>Weights</th></tr></thead>
+          <tbody>
+            <tr><td><code>deepseek-v4.1-flash-1017</code></td><td>DeepSeek V4.1 Flash, 1017 release, official weights</td></tr>
+            <tr><td><code>deepseek-v4.1-flash-1017-heretic</code></td><td>Same model with refusals removed</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec">
+      <h2>Before you use it</h2>
+      <ul class="know">
+        <li><span><b>The peer that serves you reads your prompt.</b> Transport is encrypted, but the machine running the model sees the text. Don't send secrets.</span></li>
+        <li><span><b>Peers you connect to directly see your IP address.</b> If that matters where you live, run BitLLM behind a VPN.</span></li>
+        <li><span><b>Receipts don't name you.</b> Clients sign each receipt with a one-off key, so the public record shows which server did the work, not who asked.</span></li>
+        <li><span><b>No model verification yet.</b> A node could serve a different model than the name it announces. Spot checks are next on the roadmap.</span></li>
+        <li><span><b>Credits have no value yet.</b> The counting rules will be published before that changes. Self-dealing receipts won't count.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>
+    <span>BitLLM, MIT licensed</span>
+    <a href="https://github.com/zengjiajun0623/bitllm">Source</a>
+    <a href="https://github.com/zengjiajun0623/bitllm/releases">Releases</a>
+    <span>Protocol <code>/bitllm/infer/1.0.0</code></span>
+  </footer>
+</div>
+
+<script>
+document.querySelectorAll(".copy").forEach(b => b.addEventListener("click", () => {
+  const box = b.parentElement, text = box.textContent.replace(b.textContent, "").trim();
+  const done = () => { b.textContent = "Copied"; setTimeout(() => b.textContent = "Copy", 1400); };
+  navigator.clipboard.writeText(text).then(done, () => {
+    const r = document.createRange(); r.selectNodeContents(box);
+    const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+  });
+}));
+</script>
