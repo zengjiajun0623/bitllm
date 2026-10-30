@@ -20,6 +20,12 @@ import (
 	"time"
 )
 
+// DefaultBootstrap is used when no --bootstrap is given. Anyone can run a
+// bootstrap node; this one sits behind a Cloudflare Tunnel.
+var DefaultBootstrap = []string{
+	"/dns4/boot.bitllm.org/tcp/443/wss/p2p/12D3KooWQEQQJo9RgXGDnioD3zK5JyP7QenbY7pGdLk6rhP24rib",
+}
+
 type listFlag []string
 
 func (l *listFlag) String() string     { return strings.Join(*l, ",") }
@@ -39,7 +45,7 @@ func main() {
 	flag.StringVar(&cfg.UpstreamKey, "upstream-key", "", "API key for the upstream")
 	flag.Var(&models, "model", "local-name or local-name=public-name to share (repeatable; default: every upstream model)")
 	flag.IntVar(&cfg.Concurrency, "concurrency", 1, "requests served in parallel")
-	flag.Var(&boot, "bootstrap", "multiaddr of a known peer, /ip4/.../tcp/4001/p2p/12D3... (repeatable)")
+	flag.Var(&boot, "bootstrap", "multiaddr of a known peer, /ip4/.../tcp/4001/p2p/12D3... (repeatable; default: boot.bitllm.org)")
 	flag.StringVar(&gateway, "gateway", "127.0.0.1:7778", "local OpenAI-compatible gateway address")
 	flag.IntVar(&port, "port", 4001, "p2p port, TCP and UDP (QUIC)")
 	flag.IntVar(&wsPort, "ws-port", 0, "also accept libp2p over WebSocket on 127.0.0.1:PORT, for an HTTPS tunnel (Cloudflare Tunnel etc.) in front of a bootstrap node")
@@ -53,6 +59,9 @@ func main() {
 
 	cfg.Upstream = strings.TrimRight(cfg.Upstream, "/")
 	cfg.Bootstrap = boot
+	if len(boot) == 0 && !cfg.DHTServer {
+		cfg.Bootstrap = DefaultBootstrap
+	}
 	cfg.Private = !cfg.DHTServer
 	cfg.AnnounceEvery = 10 * time.Second
 	cfg.Listen = []string{

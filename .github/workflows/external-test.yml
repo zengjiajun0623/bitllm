@@ -1,0 +1,38 @@
+# Joins the public network from a GitHub-hosted runner (an outside machine,
+# behind its own NAT) using only the default bootstrap, and asks for a model.
+name: external-test
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: model to request
+        default: deepseek-v4.1-flash-1017-heretic
+jobs:
+  join:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go build -o bitllm .
+      - name: join and request
+        env:
+          MODEL: ${{ inputs.model }}
+        run: |
+          ./bitllm --mdns=false --upnp=false > node.log 2>&1 &
+          for i in $(seq 1 90); do
+            curl -s localhost:7778/v1/models | grep -q "\"$MODEL\"" && break
+            sleep 2
+          done
+          curl -s localhost:7778/v1/models; echo
+          curl -s -D headers.txt -o body.json localhost:7778/v1/chat/completions \
+            -d "{\"model\":\"$MODEL\",\"max_tokens\":30,\"messages\":[{\"role\":\"user\",\"content\":\"Say hello in five words.\"}]}"
+          cat headers.txt; head -c 600 body.json; echo
+          sleep 3
+          curl -s localhost:7778/status | python3 -c 'import json,sys; [print(c["addr"], "relayed" if c["relayed"] else "direct") for c in json.load(sys.stdin)["conns"]]'
+          curl -s localhost:7778/credits; echo
+          grep -q "^HTTP/1.1 200" headers.txt
+      - if: always()
+        run: cat node.log
