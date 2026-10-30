@@ -164,6 +164,17 @@ th { color: var(--sub); font-weight: 500; font-size: 12px; border-top: 0; }
         </div>
         <p class="note" id="acct-result"></p>
       </div>
+      <div id="access" hidden>
+        <h3 style="margin-top:20px">Access</h3>
+        <p class="note" id="access-text"></p>
+        <div id="invite-box" hidden>
+          <div class="row">
+            <input id="invite-addr" placeholder="0x address to invite" maxlength="42" aria-label="Address to invite">
+            <button class="btn line" id="invite-go" type="button">Invite</button>
+          </div>
+          <p class="note" id="invite-result"></p>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -184,11 +195,12 @@ try { model = localStorage.getItem("bitllm-model") || ""; } catch {}
 
 async function refresh() {
   try {
-    const [st, models, credits, acct] = await Promise.all([
+    const [st, models, credits, acct, mem] = await Promise.all([
       fetch("/status").then(r => r.json()),
       fetch("/v1/models").then(r => r.json()),
       fetch("/credits").then(r => r.json()),
       fetch("/account").then(r => r.json()),
+      fetch("/members/me").then(r => r.json()),
     ]);
     me = st.id;
     $("peerid").textContent = short(me);
@@ -233,6 +245,18 @@ async function refresh() {
     } else if (!window.ethereum) {
       $("acct-link").hidden = $("acct-input").hidden = true;
       $("acct-result").innerHTML = `No browser wallet found. In a terminal: <code>bitllm account new --name you</code>`;
+    }
+
+    $("access").hidden = !mem.enabled;
+    if (mem.enabled) {
+      const left = mem.invites_limit < 0 ? "Unlimited invites" : `${Math.max(0, mem.invites_limit - mem.invites_used)} of ${mem.invites_limit} invites left`;
+      const count = `${mem.members} member${mem.members === 1 ? "" : "s"} in the network`;
+      $("access-text").innerHTML = !mem.account
+        ? `Not a member yet. Uninvited nodes are served only when a server is idle. Ask a member to invite your address, then link this node to it.`
+        : !mem.member
+        ? `Not a member yet. Ask a member to invite <span class="mono">${esc(mem.account)}</span>. Until then servers answer you only when idle.`
+        : `${mem.root ? "Root member" : mem.contributor ? "Contributor: no daily quota" : "Member: a daily free quota on every server"}${mem.invited_by ? `, invited by <span class="mono">${esc(mem.invited_by.slice(0, 6) + "…" + mem.invited_by.slice(-4))}</span>` : ""}. ${left}. ${count}.`;
+      $("invite-box").hidden = !(mem.member && window.ethereum && (mem.invites_limit < 0 || mem.invites_used < mem.invites_limit));
     }
 
     $("credits").innerHTML = credits.length ? credits.map(c => {
@@ -333,6 +357,29 @@ $("acct-link").onclick = async () => {
     res.innerHTML = `<span class="bad">${esc(e.message || e)}</span>`;
   }
   $("acct-link").disabled = false;
+};
+$("invite-go").onclick = async () => {
+  const res = $("invite-result");
+  try {
+    const invitee = $("invite-addr").value.trim().toLowerCase();
+    if (!/^0x[0-9a-f]{40}$/.test(invitee)) throw new Error("Enter a 0x address (42 characters).");
+    $("invite-go").disabled = true;
+    const [inviter] = (await window.ethereum.request({ method: "eth_requestAccounts" })).map(a => a.toLowerCase());
+    const time = Math.floor(Date.now() / 1000);
+    const msg = `BitLLM invite\ninviter: ${inviter}\ninvitee: ${invitee}\ntime: ${time}`;
+    const hex = "0x" + Array.from(new TextEncoder().encode(msg), b => b.toString(16).padStart(2, "0")).join("");
+    const sig = await window.ethereum.request({ method: "personal_sign", params: [hex, inviter] });
+    const r = await fetch("/members", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ invite: { inviter, invitee, time, sig } }) });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error.message);
+    res.innerHTML = `<span class="ok">Invited.</span> It reaches the network in seconds.`;
+    $("invite-addr").value = "";
+    refresh();
+  } catch (e) {
+    res.innerHTML = `<span class="bad">${esc(e.message || e)}</span>`;
+  }
+  $("invite-go").disabled = false;
 };
 $("peerid").onclick = () => navigator.clipboard && navigator.clipboard.writeText(me);
 renderSnip();

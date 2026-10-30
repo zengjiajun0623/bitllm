@@ -103,7 +103,7 @@ func TestNetwork(t *testing.T) {
 	boot := testNode(t, ctx, Config{})
 	bs := boot.Addrs()[:1]
 	server := testNode(t, ctx, Config{Bootstrap: bs, Upstream: up.URL + "/v1",
-		Models: map[string]string{"deepseek-v4.1-flash": "local-ds"}, FreeCredits: 30})
+		Models: map[string]string{"deepseek-v4.1-flash": "local-ds"}, FreeDaily: 30})
 	client := testNode(t, ctx, Config{Bootstrap: bs})
 
 	// The client only knows the bootstrap node; it must learn about the server
@@ -190,10 +190,11 @@ func TestNetwork(t *testing.T) {
 		}
 	}
 
-	// The client is now 40 in debt, past the server's 30 free credits.
+	// The client has used 40 credits today, past the server's daily 30
+	// (membership is off here, so every node gets the member quota).
 	w = post(client, `{"model":"deepseek-v4.1-flash","messages":[]}`)
-	if w.Code != 402 {
-		t.Fatalf("debt limit: %d %s", w.Code, w.Body)
+	if w.Code != 429 || !strings.Contains(w.Body.String(), "daily free quota") {
+		t.Fatalf("daily quota: %d %s", w.Code, w.Body)
 	}
 
 	w = post(client, `{"model":"no-such-model","messages":[]}`)
@@ -229,7 +230,7 @@ func TestRelayed(t *testing.T) {
 		t.Cleanup(func() { n.host.Close() })
 		return n
 	}
-	server := natted(Config{Upstream: up.URL + "/v1", Models: map[string]string{"ds": "local-ds"}, FreeCredits: 1000})
+	server := natted(Config{Upstream: up.URL + "/v1", Models: map[string]string{"ds": "local-ds"}})
 	client := natted(Config{})
 
 	deadline := time.Now().Add(30 * time.Second)
@@ -268,7 +269,7 @@ func TestBusyQueues(t *testing.T) {
 	defer slow.Close()
 	boot := testNode(t, ctx, Config{})
 	bs := boot.Addrs()[:1]
-	server := testNode(t, ctx, Config{Bootstrap: bs, Upstream: slow.URL + "/v1", Concurrency: 1, FreeCredits: 1000})
+	server := testNode(t, ctx, Config{Bootstrap: bs, Upstream: slow.URL + "/v1", Concurrency: 1})
 	client := testNode(t, ctx, Config{Bootstrap: bs})
 	for deadline := time.Now().Add(20 * time.Second); len(client.candidates("m")) == 0; {
 		if time.Now().After(deadline) {
@@ -310,7 +311,7 @@ func TestWebSocketBootstrap(t *testing.T) {
 	if !strings.Contains(bs[0], "/ws/") {
 		t.Fatalf("bootstrap addr %s", bs[0])
 	}
-	testNode(t, ctx, Config{Bootstrap: bs, Upstream: up.URL + "/v1", Models: map[string]string{"ds": "local-ds"}, FreeCredits: 1000})
+	testNode(t, ctx, Config{Bootstrap: bs, Upstream: up.URL + "/v1", Models: map[string]string{"ds": "local-ds"}})
 	client := testNode(t, ctx, Config{Bootstrap: bs})
 	for deadline := time.Now().Add(20 * time.Second); ; {
 		if w := post(client, `{"model":"ds","messages":[]}`); w.Code == 200 {
@@ -333,7 +334,7 @@ func TestAnthropicMessages(t *testing.T) {
 	boot := testNode(t, ctx, Config{})
 	bs := boot.Addrs()[:1]
 	server := testNode(t, ctx, Config{Bootstrap: bs, Upstream: up.URL + "/v1",
-		Models: map[string]string{"ds": "local-ds"}, FreeCredits: 1000})
+		Models: map[string]string{"ds": "local-ds"}})
 	client := testNode(t, ctx, Config{Bootstrap: bs})
 	for deadline := time.Now().Add(20 * time.Second); len(client.candidates("ds")) == 0; {
 		if time.Now().After(deadline) {
@@ -377,7 +378,7 @@ func TestOwnerAccounts(t *testing.T) {
 	bs := boot.Addrs()[:1]
 	srv := func() *Node {
 		return testNode(t, ctx, Config{Bootstrap: bs, Upstream: up.URL + "/v1",
-			Models: map[string]string{"ds": "local-ds"}, FreeCredits: 1000, Concurrency: 1})
+			Models: map[string]string{"ds": "local-ds"}, Concurrency: 1})
 	}
 	a, b := srv(), srv()
 	client := testNode(t, ctx, Config{Bootstrap: bs})

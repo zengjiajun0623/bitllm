@@ -249,24 +249,6 @@ func (n *Node) clamp(path string, body map[string]any) {
 	}
 }
 
-// admit takes a serving slot for remote, or returns why not. Strangers get
-// the slots left after a reserve kept for peers that have served us more than
-// we served them, and every peer is rate limited.
-func (n *Node) admit(remote peer.ID, now time.Time) (status int, msg string) {
-	if !n.reqLimit.allow(remote, now) {
-		return 429, "too many requests from you; slow down"
-	}
-	limit := int32(n.cfg.Concurrency)
-	if n.ledger.Balance(remote) <= 0 {
-		limit -= int32(reservedSlots(n.cfg.Concurrency))
-	}
-	if n.inflight.Add(1) > limit {
-		n.inflight.Add(-1)
-		return 429, "busy"
-	}
-	return 0, ""
-}
-
 // handleInfer serves one inference request from a peer.
 func (n *Node) handleInfer(s network.Stream) {
 	defer s.Close()
@@ -283,11 +265,8 @@ func (n *Node) handleInfer(s network.Stream) {
 		reply(400, "bad request")
 		return
 	}
-	if bal := n.ledger.Balance(remote); bal < -n.cfg.FreeCredits {
-		reply(402, fmt.Sprintf("you owe this node %d credits; share a model to earn", -bal))
-		return
-	}
-	if status, msg := n.admit(remote, time.Now()); status != 0 {
+	status, msg, quotaKey := n.admit(remote, time.Now())
+	if status != 0 {
 		reply(status, msg)
 		return
 	}
@@ -306,6 +285,9 @@ func (n *Node) handleInfer(s network.Stream) {
 	var m meter
 	pipe(s, nil, resp.Body, stream, &m)
 	n.ledger.Served(remote, m.credits())
+	if quotaKey != "" {
+		n.quota.add(quotaKey, m.credits(), time.Now())
+	}
 	if req.Job != "" {
 		var model struct{ Model string }
 		json.Unmarshal(req.Body, &model)

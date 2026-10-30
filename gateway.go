@@ -36,6 +36,8 @@ func (n *Node) Gateway() http.Handler {
 	mux.HandleFunc("GET /account", n.account)
 	mux.HandleFunc("POST /account/message", n.accountMessage)
 	mux.HandleFunc("POST /account/link", n.accountLink)
+	mux.HandleFunc("GET /members/me", n.membersMe)
+	mux.HandleFunc("POST /members", n.membersPost)
 	mux.HandleFunc("GET /credits", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(n.creditsTable())
 	})
@@ -151,7 +153,7 @@ func (n *Node) complete(path string) http.HandlerFunc {
 					return
 				}
 				var pe *peerError
-				busy = busy && errors.As(err, &pe) && pe.status == 429
+				busy = busy && errors.As(err, &pe) && isBusy(pe.status, pe.msg)
 				if !busy {
 					log.Printf("peer %s: %v", p, err)
 				}
@@ -228,6 +230,10 @@ func (n *Node) accountLink(w http.ResponseWriter, r *http.Request) {
 		OwnerSig    string `json:"owner_sig"`
 	}
 	json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req)
+	if err := sigShapeErr(req.OwnerSig); err != nil {
+		jsonErr(w, 400, err.Error())
+		return
+	}
 	c, err := n.Link(req.Owner, req.Name, req.Time, req.OwnerSig)
 	if err != nil {
 		jsonErr(w, 400, err.Error())

@@ -49,7 +49,8 @@ type Config struct {
 	Private          bool              // assume we are behind NAT: reserve a slot on the bootstrap relays
 	RelayBehindProxy bool              // peers reach our relay through a tunnel, all from one IP
 	Announce         []string          // extra public addrs, e.g. /dns4/boot.example.com/tcp/443/wss behind a tunnel
-	FreeCredits      int64             // how far into debt a stranger may go with us
+	FreeDaily        int64             // credits a member may use per UTC day on this server; contributors are unlimited
+	Roots            []string          // accounts at the top of the invite tree; none = membership off
 	MaxTokens        int               // cap on new tokens per request we serve; 0 = none
 	AnnounceEvery    time.Duration     //
 }
@@ -77,9 +78,15 @@ type Node struct {
 	claims      *Claims
 	claimTop    *pubsub.Topic
 	nodeKey     crypto.PrivKey
-	reqLimit    peerLimiter // per-peer request rate for jobs we serve
-	annRate     originRate  // announce gossip, per origin
-	claimRate   originRate  // claim gossip, per origin
+	members     *Members
+	memTop      *pubsub.Topic
+	memRate     originRate // membership gossip, per origin
+	quota       *Quota
+	accessMu    sync.Mutex
+	accessAt    time.Time
+	access      *MemberSet // cached, see memberSet
+	annRate     originRate // announce gossip, per origin
+	claimRate   originRate // claim gossip, per origin
 	receiptSeed []byte
 	relays      []peer.AddrInfo // bootstrap nodes, which also relay
 	http        *http.Client
@@ -202,6 +209,8 @@ func NewNode(ctx context.Context, cfg Config) (*Node, error) {
 		return nil, err
 	}
 	n.claims = OpenClaims(filepath.Join(cfg.DataDir, "claims.json"))
+	n.members = OpenMembers(filepath.Join(cfg.DataDir, "members.json"), cfg.Roots)
+	n.quota = OpenQuota(filepath.Join(cfg.DataDir, "quota.json"))
 	if n.receipts, err = OpenReceipts(filepath.Join(cfg.DataDir, "receipts.jsonl"), key, n.host.ID()); err != nil {
 		return nil, err
 	}
@@ -232,6 +241,22 @@ func NewNode(ctx context.Context, cfg Config) (*Node, error) {
 		return json.Unmarshal(msg.Data, &c) == nil && c.Node == msg.GetFrom().String() &&
 			c.Valid() && n.claimRate.allow(msg.GetFrom(), time.Now())
 	})
+	n.memRate.every = time.Second
+	ps.RegisterTopicValidator(MembersTopic, func(_ context.Context, _ peer.ID, msg *pubsub.Message) bool {
+		var it memberItem
+		if json.Unmarshal(msg.Data, &it) != nil || !n.memRate.allow(msg.GetFrom(), time.Now()) {
+			return false
+		}
+		return (it.Invite != nil && it.Invite.Valid()) || (it.Revoke != nil && it.Revoke.Valid())
+	})
+	if n.memTop, err = ps.Join(MembersTopic); err != nil {
+		return nil, err
+	}
+	msub, err := n.memTop.Subscribe()
+	if err != nil {
+		return nil, err
+	}
+	go n.readMembers(ctx, msub)
 	n.annRate.every = cfg.AnnounceEvery / 2
 	ps.RegisterTopicValidator(AnnounceTopic, func(_ context.Context, _ peer.ID, msg *pubsub.Message) bool {
 		var a Announce
@@ -273,6 +298,7 @@ func NewNode(ctx context.Context, cfg Config) (*Node, error) {
 		mdns.NewMdnsService(n.host, Rendezvous, n).Start()
 	}
 	go n.discoverLoop(ctx)
+	go n.syncLoop(ctx)
 	if cfg.Upstream != "" {
 		go n.announceLoop(ctx)
 	}
@@ -347,6 +373,23 @@ func relayResources(behindProxy bool) relay.Resources {
 		rc.MaxReservationsPerIP = rc.MaxReservations
 	}
 	return rc
+}
+
+// syncLoop re-syncs receipts, claims and invites from the bootstrap nodes
+// now and then, so anything a node missed on gossip arrives eventually.
+func (n *Node) syncLoop(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(10 * time.Minute):
+		}
+		for _, ai := range n.relays {
+			if n.host.Network().Connectedness(ai.ID) == network.Connected {
+				n.syncReceipts(ctx, ai.ID)
+			}
+		}
+	}
 }
 
 // HandlePeerFound is the mDNS callback.

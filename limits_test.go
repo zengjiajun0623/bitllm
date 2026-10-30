@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"time"
@@ -17,52 +16,6 @@ func randomPeer(t *testing.T) peer.ID {
 		t.Fatal(err)
 	}
 	return p
-}
-
-func TestAdmitReservesSlotsForContributors(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	n := testNode(t, ctx, Config{Concurrency: 4}) // 1 slot reserved
-	stranger, friend := randomPeer(t), randomPeer(t)
-	n.ledger.Received(friend, 100) // friend has served us
-	now := time.Now()
-	for i := range 3 {
-		if s, _ := n.admit(stranger, now); s != 0 {
-			t.Fatalf("stranger refused slot %d", i+1)
-		}
-	}
-	if s, _ := n.admit(stranger, now); s != 429 {
-		t.Fatal("stranger took the reserved slot")
-	}
-	if s, _ := n.admit(friend, now); s != 0 {
-		t.Fatal("contributor refused the reserved slot")
-	}
-	if s, _ := n.admit(friend, now); s != 429 {
-		t.Fatal("admitted past concurrency")
-	}
-	if reservedSlots(1) != 0 {
-		t.Fatal("a single-slot node must not reserve its only slot")
-	}
-}
-
-func TestPeerRateLimit(t *testing.T) {
-	var pl peerLimiter
-	p, q := randomPeer(t), randomPeer(t)
-	now := time.Now()
-	for i := range peerRequestBurst {
-		if !pl.allow(p, now) {
-			t.Fatalf("refused request %d within the burst", i+1)
-		}
-	}
-	if pl.allow(p, now) {
-		t.Fatal("allowed past the burst")
-	}
-	if !pl.allow(q, now) {
-		t.Fatal("one peer's burst limited another")
-	}
-	if !pl.allow(p, now.Add(time.Minute/peerRequestsPerMinute)) {
-		t.Fatal("bucket did not refill")
-	}
 }
 
 func TestValidAnnounce(t *testing.T) {

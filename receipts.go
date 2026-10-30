@@ -320,7 +320,9 @@ func (n *Node) sendReceipt(p peer.ID, job, model string, m meter) error {
 // syncItem is one line of the sync stream: a receipt, or a node claim.
 type syncItem struct {
 	SignedReceipt
-	Claim *Claim `json:"claim,omitempty"`
+	Claim  *Claim  `json:"claim,omitempty"`
+	Invite *Invite `json:"invite,omitempty"`
+	Revoke *Revoke `json:"revoke,omitempty"`
 }
 
 // handleSync streams every receipt and claim we know, so a new node can catch up.
@@ -337,6 +339,11 @@ func (n *Node) handleSync(s network.Stream) {
 	}
 	for _, c := range n.claims.all() {
 		if enc.Encode(map[string]any{"claim": c}) != nil {
+			return
+		}
+	}
+	for _, it := range n.members.items() {
+		if enc.Encode(it) != nil {
 			return
 		}
 	}
@@ -360,6 +367,10 @@ func (n *Node) syncReceipts(ctx context.Context, p peer.ID) (int, error) {
 		}
 		if it.Claim != nil {
 			n.claims.add(*it.Claim)
+		} else if it.Invite != nil || it.Revoke != nil {
+			if n.members.add(memberItem{Invite: it.Invite, Revoke: it.Revoke}) {
+				n.invalidateMembers()
+			}
 		} else if n.receipts.add(it.SignedReceipt) {
 			added++
 		}

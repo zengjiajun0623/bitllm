@@ -1,0 +1,258 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"strings"
+	"sync"
+	"time"
+
+	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	"github.com/libp2p/go-libp2p/core/peer"
+)
+
+// Quota counts credits served per account (or per peer, for nodes with no
+// account) during the current UTC day, on this server only.
+type Quota struct {
+	mu   sync.Mutex
+	path string
+	Day  int64            `json:"day"`
+	Used map[string]int64 `json:"used"`
+}
+
+func utcDay(t time.Time) int64 { return t.Unix() / 86400 }
+
+func OpenQuota(path string) *Quota {
+	q := &Quota{path: path, Used: map[string]int64{}}
+	if b, err := os.ReadFile(path); err == nil {
+		json.Unmarshal(b, q)
+	}
+	if q.Used == nil {
+		q.Used = map[string]int64{}
+	}
+	return q
+}
+
+func (q *Quota) roll(now time.Time) {
+	if d := utcDay(now); d != q.Day {
+		q.Day, q.Used = d, map[string]int64{}
+	}
+}
+
+func (q *Quota) used(key string, now time.Time) int64 {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.roll(now)
+	return q.Used[key]
+}
+
+func (q *Quota) add(key string, credits int64, now time.Time) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.roll(now)
+	q.Used[key] += credits
+	b, _ := json.Marshal(q)
+	tmp := q.path + ".tmp"
+	if os.WriteFile(tmp, b, 0o600) == nil {
+		os.Rename(tmp, q.path)
+	}
+}
+
+// memberSet returns the current member set, recomputed at most every 10 s.
+func (n *Node) memberSet() *MemberSet {
+	n.accessMu.Lock()
+	defer n.accessMu.Unlock()
+	if n.access != nil && time.Since(n.accessAt) < 10*time.Second {
+		return n.access
+	}
+	n.access, n.accessAt = n.members.Compute(n.contributors(time.Now())), time.Now()
+	return n.access
+}
+
+// invalidateMembers drops the cached member set after a change.
+func (n *Node) invalidateMembers() {
+	n.accessMu.Lock()
+	n.access = nil
+	n.accessMu.Unlock()
+}
+
+// contributors are the accounts owning a node that served a job (has a
+// receipt as server) within the contributor window.
+func (n *Node) contributors(now time.Time) map[string]bool {
+	since := now.Add(-contributorWindow).Unix()
+	n.receipts.mu.Lock()
+	servers := map[string]bool{}
+	for _, sr := range n.receipts.all {
+		if sr.Receipt.TS >= since {
+			servers[sr.Receipt.Server] = true
+		}
+	}
+	n.receipts.mu.Unlock()
+	out := map[string]bool{}
+	for s := range servers {
+		if c, ok := n.claims.get(s); ok {
+			out[c.Owner] = true
+		}
+	}
+	return out
+}
+
+// accountOf is the account that owns node p, or "".
+func (n *Node) accountOf(p peer.ID) string {
+	if c, ok := n.claims.get(p.String()); ok {
+		return c.Owner
+	}
+	return ""
+}
+
+// The three access rules, as the server applies them to a request from remote.
+const (
+	msgBusy       = "busy"
+	msgUninvited  = "busy: this server serves uninvited nodes only when it is idle. Ask a member for an invite (bitllm invite), then link this node to your account"
+	msgQuotaSpent = "daily free quota on this server used up. Share a model to become a contributor (no quota), or try again after 00:00 UTC"
+)
+
+// admit takes a serving slot for remote, or says why not. key is what the job
+// is counted against in the daily quota ("" when it is not counted).
+func (n *Node) admit(remote peer.ID, now time.Time) (status int, msg, key string) {
+	account := n.accountOf(remote)
+	member, contributor := true, false
+	if n.members.Enabled() {
+		ms := n.memberSet()
+		member = account != "" && ms.Member[account]
+		contributor = member && ms.Contributors[account]
+	}
+	if !member {
+		if n.inflight.Add(1) > 1 { // idle means nothing else is running
+			n.inflight.Add(-1)
+			return 429, msgUninvited, ""
+		}
+		return 0, "", ""
+	}
+	key = account
+	if key == "" { // membership off and no account: count per node
+		key = "node:" + remote.String()
+	}
+	if !contributor && n.cfg.FreeDaily > 0 && n.quota.used(key, now) >= n.cfg.FreeDaily {
+		return 429, msgQuotaSpent, ""
+	}
+	if contributor {
+		key = ""
+	}
+	if n.inflight.Add(1) > int32(n.cfg.Concurrency) {
+		n.inflight.Add(-1)
+		return 429, msgBusy, ""
+	}
+	return 0, "", key
+}
+
+// isBusy reports whether a refusal is temporary, worth waiting out.
+func isBusy(status int, msg string) bool {
+	return status == 429 && strings.HasPrefix(msg, msgBusy)
+}
+
+func (n *Node) readMembers(ctx context.Context, sub *pubsub.Subscription) {
+	for {
+		msg, err := sub.Next(ctx)
+		if err != nil {
+			return
+		}
+		var it memberItem
+		if json.Unmarshal(msg.Data, &it) == nil && n.members.add(it) {
+			n.invalidateMembers()
+		}
+	}
+}
+
+// publishMember stores an invite or revocation and gossips it.
+func (n *Node) publishMember(it memberItem) bool {
+	if !n.members.add(it) {
+		return false
+	}
+	n.invalidateMembers()
+	b, _ := json.Marshal(it)
+	n.memTop.Publish(context.Background(), b)
+	// Gossip sent before the mesh has formed is lost; say it once more.
+	time.AfterFunc(5*time.Second, func() { n.memTop.Publish(context.Background(), b) })
+	return true
+}
+
+// MemberInfo is what the dashboard shows about an account.
+type MemberInfo struct {
+	Enabled      bool   `json:"enabled"`
+	Account      string `json:"account,omitempty"`
+	Member       bool   `json:"member"`
+	Root         bool   `json:"root"`
+	Contributor  bool   `json:"contributor"`
+	InvitedBy    string `json:"invited_by,omitempty"`
+	InvitesUsed  int    `json:"invites_used"`
+	InvitesLimit int    `json:"invites_limit"` // -1: unlimited
+	Members      int    `json:"members"`
+}
+
+func (n *Node) memberInfo(account string) MemberInfo {
+	ms := n.memberSet()
+	info := MemberInfo{Enabled: n.members.Enabled(), Account: account, Members: len(ms.Member)}
+	if account == "" {
+		return info
+	}
+	info.Member = ms.Member[account]
+	info.Root = ms.roots[account]
+	info.Contributor = ms.Contributors[account]
+	if inv := ms.InvitedBy[account]; inv != "" {
+		info.InvitedBy = checksumAddress(inv)
+	}
+	info.InvitesUsed = ms.Used[account]
+	info.InvitesLimit = ms.InviteLimit(account)
+	return info
+}
+
+func (n *Node) membersMe(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(n.memberInfo(n.accountOf(n.host.ID())))
+}
+
+// membersPost accepts a signed invite or revocation (from the CLI) and gossips it.
+func (n *Node) membersPost(w http.ResponseWriter, r *http.Request) {
+	var it memberItem
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&it); err != nil {
+		jsonErr(w, 400, "bad json")
+		return
+	}
+	if err := sigShapeErr(sigOf(it)); err != nil {
+		jsonErr(w, 400, err.Error())
+		return
+	}
+	if i := it.Invite; i != nil && n.members.Enabled() {
+		ms := n.memberSet()
+		switch lim := ms.InviteLimit(i.Inviter); {
+		case !ms.Member[i.Inviter]:
+			jsonErr(w, 400, checksumAddress(i.Inviter)+" is not a member, so its invites do not count")
+			return
+		case lim >= 0 && ms.Used[i.Inviter] >= lim:
+			jsonErr(w, 400, fmt.Sprintf("%s has used all %d invites", checksumAddress(i.Inviter), lim))
+			return
+		case ms.Member[i.Invitee]:
+			jsonErr(w, 400, checksumAddress(i.Invitee)+" is already a member")
+			return
+		}
+	}
+	if !n.publishMember(it) {
+		jsonErr(w, 400, "invalid or already known (check the signature, addresses and the root list)")
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]any{"ok": true})
+}
+
+func sigOf(it memberItem) string {
+	switch {
+	case it.Invite != nil:
+		return it.Invite.Sig
+	case it.Revoke != nil:
+		return it.Revoke.Sig
+	}
+	return ""
+}

@@ -29,6 +29,10 @@ var DefaultBootstrap = []string{
 	"/dns4/boot.bitllm.org/tcp/443/wss/p2p/12D3KooWQEQQJo9RgXGDnioD3zK5JyP7QenbY7pGdLk6rhP24rib",
 }
 
+// DefaultRoots are the accounts at the top of the invite tree (zengjiajun.eth).
+// With none, membership is off and every node is treated as a member.
+var DefaultRoots = []string{"0xf3f527b70af6012f328d3ede7fcd3f5f3ca6cba2"}
+
 type listFlag []string
 
 func (l *listFlag) String() string     { return strings.Join(*l, ",") }
@@ -40,10 +44,15 @@ func main() {
 		accountCmd(os.Args[2:], home)
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "invite" {
+		inviteCmd(os.Args[2:])
+		return
+	}
 	var (
 		cfg          Config
 		models, boot listFlag
 		announce     listFlag
+		roots        listFlag
 		wsPort       int
 		gateway      string
 		port         int
@@ -56,6 +65,7 @@ func main() {
 	flag.StringVar(&gateway, "gateway", "127.0.0.1:7778", "local OpenAI-compatible gateway address")
 	flag.IntVar(&port, "port", 4001, "p2p port, TCP and UDP (QUIC)")
 	flag.IntVar(&wsPort, "ws-port", 0, "also accept libp2p over WebSocket on 127.0.0.1:PORT, for an HTTPS tunnel (Cloudflare Tunnel etc.) in front of a bootstrap node")
+	flag.Var(&roots, "roots", "root account of the invite tree (repeatable; default: the BitLLM root). For private networks and tests")
 	flag.Var(&announce, "announce", "public multiaddr to advertise, e.g. /dns4/boot.example.com/tcp/443/wss (repeatable)")
 	flag.StringVar(&cfg.DataDir, "data", filepath.Join(home, ".bitllm"), "identity and ledger directory")
 	flag.BoolVar(&cfg.DHTServer, "dht-server", false, "always act as a DHT server (for bootstrap nodes with a public address)")
@@ -63,7 +73,7 @@ func main() {
 	flag.BoolVar(&cfg.UPnP, "upnp", true, "ask the router (UPnP/NAT-PMP) to forward the p2p port so peers can reach us directly")
 	flag.IntVar(&cfg.MaxTokens, "max-tokens", 32768, "most new tokens a peer may ask for in one request (0: no limit)")
 	showVersion := flag.Bool("version", false, "print the version and exit")
-	flag.Int64Var(&cfg.FreeCredits, "free-credits", 50_000, "credits a peer may take from us before it must give back")
+	flag.Int64Var(&cfg.FreeDaily, "free-daily", 200_000, "credits each member may use per UTC day on this server (contributors: no limit; 0: no limit)")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println("bitllm", Version)
@@ -72,6 +82,10 @@ func main() {
 
 	cfg.Upstream = strings.TrimRight(cfg.Upstream, "/")
 	cfg.Bootstrap = boot
+	cfg.Roots = DefaultRoots
+	if len(roots) > 0 {
+		cfg.Roots = roots
+	}
 	if len(boot) == 0 && !cfg.DHTServer {
 		cfg.Bootstrap = DefaultBootstrap
 	}

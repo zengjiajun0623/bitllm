@@ -154,6 +154,7 @@ footer code { font: 12px var(--mono); }
     <nav>
       <a href="#start">Get started</a>
       <a class="opt" href="#how">How it works</a>
+      <a class="opt" href="#access">Access</a>
       <a href="https://github.com/zengjiajun0623/bitllm/blob/main/JOIN.zh.md">中文</a>
       <a href="https://github.com/zengjiajun0623/bitllm">GitHub</a>
     </nav>
@@ -163,7 +164,7 @@ footer code { font: 12px var(--mono); }
     <div>
       <h1>BitTorrent for <span>local LLMs</span></h1>
       <p class="lede">Share the model running on your own GPU. Use the ones running on everyone else's.
-        <b>One binary, no account, no port forwarding, no company in the middle.</b></p>
+        <b>One binary, no port forwarding, no company in the middle.</b> Invite-only beta.</p>
       <div class="dl">
         <a class="btn" href="https://github.com/zengjiajun0623/bitllm/releases/latest">Download</a>
         <a class="btn ghost" href="#start">Two commands to start</a>
@@ -237,6 +238,18 @@ export OPENAI_BASE_URL=http://127.0.0.1:7778/v1</div>
     </div>
   </section>
 
+  <section id="access">
+    <div class="sec">
+      <h2>How access works</h2>
+      <ul class="know">
+        <li><span><b>1. You need an invite to get a free quota.</b> Uninvited nodes are served only when the server is idle.</span></li>
+        <li><span><b>2. A member gets a daily free quota on each server.</b> The server owner sets it; the default is 200,000 credits per day.</span></li>
+        <li><span><b>3. Share compute and you're a contributor:</b> no quota, and 10 invites instead of 3.</span></li>
+      </ul>
+      <p class="muted">Invites are signed by an Ethereum account and gossiped like everything else; there is no membership server. Ask a member to invite your address, then link your node to it in the dashboard.</p>
+    </div>
+  </section>
+
   <section>
     <div class="sec">
       <h2>Models</h2>
@@ -259,7 +272,7 @@ export OPENAI_BASE_URL=http://127.0.0.1:7778/v1</div>
       <ul class="know">
         <li><span><b>The peer that serves you reads your prompt.</b> Transport is encrypted, but the machine running the model sees the text. Don't send secrets.</span></li>
         <li><span><b>Peers you connect to directly see your IP address.</b> If that matters where you live, run BitLLM behind a VPN.</span></li>
-        <li><span><b>Receipts don't name you.</b> Clients sign each receipt with a one-off key, so the public record shows which server did the work, not who asked.</span></li>
+        <li><span><b>Receipts don't name you.</b> Clients sign receipts with a pseudonym per server that changes every 30 days, so the public record counts a server's distinct clients but can't follow you across servers or months.</span></li>
         <li><span><b>No model verification yet.</b> A node could serve a different model than the name it announces. Spot checks are next on the roadmap.</span></li>
         <li><span><b>Credits have no value yet.</b> The counting rules will be published before that changes. Self-dealing receipts won't count.</span></li>
       </ul>

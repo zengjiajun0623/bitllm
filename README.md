@@ -9,7 +9,7 @@ each other through a Kademlia DHT and gossip, connect directly when they can, an
 relay plus hole punching when both sides are behind NAT.
 
 Download a binary from [Releases](../../releases) (macOS arm64, Linux amd64/arm64, Windows),
-`chmod +x` it, and run it. No port forwarding, no account, no config: it joins through
+`chmod +x` it, and run it. No port forwarding, no config: it joins through
 `boot.bitllm.org` by default. 中文说明见 [JOIN.zh.md](JOIN.zh.md)。
 
 ## Share a model
@@ -82,6 +82,25 @@ peers. What credits will be worth is not decided yet. Which receipts count will 
 before it is: serving yourself through fake clients or serving a model other than the one named
 will not count.
 
+## How access works
+
+Invite-only beta. Three rules:
+
+1. You need an invite to get a free quota. Uninvited nodes are served only when the server is idle.
+2. A member gets a daily free quota on each server (`--free-daily`, set by the server owner; default 200,000 credits).
+3. Share compute and you're a contributor: no quota, and 10 invites instead of 3.
+
+A member is the root account or anyone a member invited. A contributor is an account whose node
+served a job in the last 7 days. Invites are signed with an Ethereum account and gossiped; every
+node computes the same member set, so there is no membership server. Servers look up the
+requesting node's account through its claim (below).
+
+```bash
+bitllm invite 0xADDRESS           # invite with a recovery-words account
+```
+
+With a browser wallet, use the Invite box in the dashboard instead.
+
 ### Accounts
 
 Credits are earned by nodes. To add up the credits of all your machines, link each node to one
@@ -99,8 +118,7 @@ Or click "Link wallet" in the dashboard to sign with a browser wallet (MetaMask,
 Smart-contract wallets are not supported yet (their signatures need a chain to verify).
 
 Separately, each node keeps a private ledger of work exchanged with each peer
-(`~/.bitllm/ledger.json`). A peer may take up to `--free-credits` (50,000) more than it gave
-before your node stops serving it.
+(`~/.bitllm/ledger.json`), kept as data.
 
 ## Run a bootstrap node
 
