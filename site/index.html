@@ -225,12 +225,16 @@ document.addEventListener("click", e => {
   function init() {
     seed = 11; relays = []; gpus = []; jobs = []; served = 0; rerouted = 0;
     for (let i = 0; i < 44; i++) relays.push({ x: .04 + rnd() * .92, y: .07 + rnd() * .86 });
-    for (let i = 0; i < 7; i++) gpus.push({ x: .3 + rnd() * .66, y: .08 + rnd() * .84, on: true, busy: 0, flash: 0 });
     clients = [
       { x: .1, y: .52, main: true, next: 0, job: null, wait: false },
       { x: .36, y: .93, next: 1.4, job: null, wait: false },
       { x: .55, y: .06, next: 2.6, job: null, wait: false },
     ];
+    // Spread the GPUs out: keep each one clear of the others and the clients.
+    for (let i = 0, tries = 0; i < 7 && tries < 500; tries++) {
+      const g = { x: .24 + rnd() * .72, y: .1 + rnd() * .8, on: true, busy: 0, flash: 0 };
+      if ([...gpus, ...clients].every(o => Math.sqrt(d2(o, g)) > .15 - tries / 5000)) { gpus.push(g); i++; }
+    }
     linkUp();
   }
   function linkUp() {
