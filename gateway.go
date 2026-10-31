@@ -123,6 +123,9 @@ func (n *Node) complete(path string) http.HandlerFunc {
 			jsonErr(w, 400, "bad json")
 			return
 		}
+		if defuses(path) {
+			body = defuseBody(body) // also here, for peers running an older version
+		}
 
 		// Our own model: private and free, no network hop. While our server
 		// is down, peers serving the same model answer instead.
