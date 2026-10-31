@@ -58,7 +58,7 @@ func main() {
 		port         int
 	)
 	flag.StringVar(&cfg.Upstream, "upstream", "", "OpenAI-compatible base URL to share, e.g. http://localhost:8080/v1 (empty: use the network only)")
-	flag.StringVar(&cfg.UpstreamKey, "upstream-key", "", "API key for the upstream")
+	flag.StringVar(&cfg.UpstreamKey, "upstream-key", os.Getenv("BITLLM_UPSTREAM_KEY"), "API key for the upstream (default $BITLLM_UPSTREAM_KEY, which keeps it out of the process list)")
 	flag.Var(&models, "model", "local-name or local-name=public-name to share (repeatable; default: every upstream model)")
 	flag.IntVar(&cfg.Concurrency, "concurrency", 1, "requests served in parallel")
 	flag.Var(&boot, "bootstrap", "multiaddr of a known peer, /ip4/.../tcp/4001/p2p/12D3... (repeatable; default: boot.bitllm.org)")

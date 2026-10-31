@@ -110,7 +110,7 @@ curl -s http://127.0.0.1:7778/status
 
 Check: `serving` in the status lists NETWORK_NAME. Set `--concurrency` to how many parallel requests the server can take without slowing the user down. Requests for a model the user shares are answered by their own server and never leave the machine.
 
-Useful flags: `--upstream-key KEY` if the server needs an API key; `--max-tokens N` caps tokens per peer request (default 32768); `--free-daily N` sets a daily quota per member (default 0, no limit); `--open` also serves uninvited nodes on spare slots.
+Useful flags: `--upstream-key KEY` if the server needs an API key (or set `BITLLM_UPSTREAM_KEY`, which keeps it out of the process list); `--max-tokens N` caps tokens per peer request (default 32768); `--free-daily N` sets a daily quota per member (default 0, no limit); `--open` also serves uninvited nodes on spare slots.
 
 ## Task 4: keep it running
 
