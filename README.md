@@ -50,6 +50,7 @@ message. Prefer to download by hand? Get the file for your system from [Releases
 |---|---|
 | `deepseek-v4.1-flash-1017` | DeepSeek V4.1 Flash, 1017 release, official weights |
 | `deepseek-v4.1-flash-1017-heretic` | same, heretic (uncensored) fine-tune |
+| `qwen3.8-flash-next-fp4-alesha` | Qwen3.8 Flash-Next, NVIDIA FP4-Local quant, alesha uncensored fine-tune |
 
 Same name must mean same weights. Add a row (PR or message) before sharing a new model.
 

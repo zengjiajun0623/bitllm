@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -449,4 +450,53 @@ func gwReq(method, target string, body io.Reader) *http.Request {
 	r := httptest.NewRequest(method, target, body)
 	r.Host = "127.0.0.1:7778"
 	return r
+}
+
+// TestUpstreamDown: a server whose upstream stops answering withdraws its
+// model, so clients get "no peer" instead of a 502 from a dead server, and
+// announces it again once the upstream is back.
+func TestUpstreamDown(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	up := mockUpstream(t, "local-ds")
+	defer up.Close()
+	var down atomic.Bool
+	flaky := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if down.Load() {
+			http.Error(w, "stopped", 502)
+			return
+		}
+		up.Config.Handler.ServeHTTP(w, r)
+	}))
+	defer flaky.Close()
+	boot := testNode(t, ctx, Config{})
+	bs := boot.Addrs()[:1]
+	server := testNode(t, ctx, Config{Bootstrap: bs, Upstream: flaky.URL + "/v1",
+		Models: map[string]string{"ds": "local-ds"}})
+	client := testNode(t, ctx, Config{Bootstrap: bs})
+	waitFor := func(what string, cond func() bool) {
+		t.Helper()
+		for deadline := time.Now().Add(20 * time.Second); !cond(); {
+			if time.Now().After(deadline) {
+				t.Fatal(what)
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+	waitFor("no discovery", func() bool { return len(client.candidates("ds")) > 0 })
+
+	down.Store(true)
+	waitFor("model still announced with the upstream down", func() bool { return len(client.candidates("ds")) == 0 })
+	if w := post(client, `{"model":"ds","messages":[]}`); w.Code != 503 {
+		t.Fatalf("got %d %s, want 503 no peer", w.Code, w.Body)
+	}
+	if server.ownModel("ds") {
+		t.Fatal("server still answers ds locally with its upstream down")
+	}
+
+	down.Store(false)
+	waitFor("model not announced again", func() bool { return len(client.candidates("ds")) > 0 })
+	if w := post(client, `{"model":"ds","messages":[]}`); w.Code != 200 {
+		t.Fatalf("after recovery: %d %s", w.Code, w.Body)
+	}
 }

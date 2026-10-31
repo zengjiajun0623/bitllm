@@ -87,7 +87,9 @@ func jsonErr(w http.ResponseWriter, status int, msg string) {
 func (n *Node) listModels(w http.ResponseWriter, r *http.Request) {
 	nodes := map[string]int{}
 	for m := range n.cfg.Models {
-		nodes[m]++
+		if n.ownModel(m) {
+			nodes[m]++
+		}
 	}
 	for _, a := range n.alive() {
 		for _, m := range a.Models {
@@ -122,8 +124,9 @@ func (n *Node) complete(path string) http.HandlerFunc {
 			return
 		}
 
-		// Our own model: private and free, no network hop.
-		if _, ok := n.cfg.Models[req.Model]; ok {
+		// Our own model: private and free, no network hop. While our server
+		// is down, peers serving the same model answer instead.
+		if n.ownModel(req.Model) {
 			resp, stream, err := n.callUpstream(r.Context(), path, body)
 			if err != nil {
 				pe := err.(*peerError)
@@ -193,13 +196,14 @@ func (n *Node) status(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	json.NewEncoder(w).Encode(map[string]any{
-		"version":  Version,
-		"id":       n.host.ID().String(),
-		"addrs":    n.Addrs(),
-		"conns":    conns,
-		"serving":  serving,
-		"inflight": n.inflight.Load(),
-		"ledger":   n.ledger.Snapshot(),
+		"version":     Version,
+		"id":          n.host.ID().String(),
+		"addrs":       n.Addrs(),
+		"conns":       conns,
+		"serving":     serving,
+		"upstream_up": n.cfg.Upstream != "" && n.upOK.Load(),
+		"inflight":    n.inflight.Load(),
+		"ledger":      n.ledger.Snapshot(),
 	})
 }
 

@@ -40,7 +40,7 @@ curl -s localhost:8000/v1/models     # 看 "id" 字段，比如 "deepseek-v4.1-f
   --concurrency 2
 ```
 
-- 等号左边是你本地的名字，右边是网络统一名字。**官方权重一律用 `deepseek-v4.1-flash-1017`**，去审查版用 `deepseek-v4.1-flash-1017-heretic`。名字不对，别人就找不到你。
+- 等号左边是你本地的名字，右边是网络统一名字。**官方权重一律用 `deepseek-v4.1-flash-1017`**，去审查版用 `deepseek-v4.1-flash-1017-heretic`。Qwen3.8 Flash-Next 的 NVIDIA FP4-Local 量化 + alesha 去审查微调版用 `qwen3.8-flash-next-fp4-alesha`。名字不对，别人就找不到你。
 - `--concurrency` 是同时接几个请求，按你机器的余量填。
 
 看到 `sharing map[...]` 和 `gateway http://127.0.0.1:7778/v1` 就说明接上了。

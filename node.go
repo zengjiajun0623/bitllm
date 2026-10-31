@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -98,6 +99,7 @@ type Node struct {
 	relays       []peer.AddrInfo // bootstrap nodes, which also relay
 	http         *http.Client
 	inflight     atomic.Int32
+	upOK         atomic.Bool  // upstream answered its last health check
 	openInflight atomic.Int32 // slots held by uninvited nodes on an open server
 
 	mu    sync.Mutex
@@ -315,6 +317,7 @@ func NewNode(ctx context.Context, cfg Config) (*Node, error) {
 	go n.discoverLoop(ctx)
 	go n.syncLoop(ctx)
 	if cfg.Upstream != "" {
+		n.upOK.Store(n.checkUpstream(ctx))
 		go n.announceLoop(ctx)
 	}
 	return n, nil
@@ -433,6 +436,10 @@ func (n *Node) discoverLoop(ctx context.Context) {
 	}
 }
 
+// announceLoop gossips our models while the upstream is up. A node whose
+// server is stopped (say, the GPU is busy with something else) goes quiet, so
+// clients stop routing to it within three announce periods, and comes back on
+// the first check that passes.
 func (n *Node) announceLoop(ctx context.Context) {
 	models := make([]string, 0, len(n.cfg.Models))
 	for m := range n.cfg.Models {
@@ -440,8 +447,20 @@ func (n *Node) announceLoop(ctx context.Context) {
 	}
 	sort.Strings(models)
 	for {
+		// A job in flight already proves the server works, and a server that
+		// handles one request at a time may not answer the probe meanwhile.
+		if n.inflight.Load() == 0 {
+			ok := n.checkUpstream(ctx)
+			if ok != n.upOK.Swap(ok) {
+				log.Printf("upstream %s: up=%v", n.cfg.Upstream, ok)
+			}
+		}
 		free := n.cfg.Concurrency - int(n.inflight.Load())
-		b, _ := json.Marshal(Announce{Version: Version, Models: models, Free: max(free, 0), Max: n.cfg.Concurrency})
+		a := Announce{Version: Version, Models: []string{}, Free: max(free, 0), Max: n.cfg.Concurrency}
+		if n.upOK.Load() {
+			a.Models = models
+		}
+		b, _ := json.Marshal(a)
 		n.topic.Publish(ctx, b)
 		select {
 		case <-ctx.Done():
@@ -449,6 +468,27 @@ func (n *Node) announceLoop(ctx context.Context) {
 		case <-time.After(n.cfg.AnnounceEvery):
 		}
 	}
+}
+
+// checkUpstream reports whether the upstream answers GET /models.
+func (n *Node) checkUpstream(ctx context.Context) bool {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "GET", n.cfg.Upstream+"/models", nil)
+	n.upstreamAuth(req)
+	resp, err := n.http.Do(req)
+	if err != nil {
+		return false
+	}
+	io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
+	resp.Body.Close()
+	return resp.StatusCode/100 == 2
+}
+
+// ownModel reports whether we answer model ourselves right now.
+func (n *Node) ownModel(model string) bool {
+	_, ok := n.cfg.Models[model]
+	return ok && n.upOK.Load()
 }
 
 func (n *Node) readAnnounces(ctx context.Context, sub *pubsub.Subscription) {

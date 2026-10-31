@@ -98,6 +98,7 @@ Map that local id to a network name. Use a name from the table below when the we
 |---|---|
 | `deepseek-v4.1-flash-1017` | DeepSeek V4.1 Flash, 1017 release, official weights |
 | `deepseek-v4.1-flash-1017-heretic` | the same model with refusals removed |
+| `qwen3.8-flash-next-fp4-alesha` | Qwen3.8 Flash-Next, NVIDIA FP4-Local quant, alesha uncensored fine-tune |
 
 Start sharing. Only one node runs per machine, so stop a node started in Task 2 first (`pkill -x bitllm`):
 
