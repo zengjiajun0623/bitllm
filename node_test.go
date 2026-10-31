@@ -500,3 +500,63 @@ func TestUpstreamDown(t *testing.T) {
 		t.Fatalf("after recovery: %d %s", w.Code, w.Body)
 	}
 }
+
+// TestSpecialTokens: a DeepSeek special token in the history (here echoed by
+// the model) no longer gets the request refused by a vLLM-like upstream.
+func TestSpecialTokens(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Messages []struct{ Content string }
+		}
+		json.NewDecoder(r.Body).Decode(&req)
+		for _, m := range req.Messages {
+			if strings.Contains(m.Content, "<｜deepseek_image｜>") {
+				http.Error(w, `{"error":"Message content contains image special token"}`, 400)
+				return
+			}
+		}
+		fmt.Fprint(w, `{"choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":4,"completion_tokens":1}}`)
+	}))
+	defer up.Close()
+	boot := testNode(t, ctx, Config{})
+	bs := boot.Addrs()[:1]
+	testNode(t, ctx, Config{Bootstrap: bs, Upstream: up.URL + "/v1", Models: map[string]string{"ds": "local-ds"}})
+	client := testNode(t, ctx, Config{Bootstrap: bs})
+	for deadline := time.Now().Add(20 * time.Second); len(client.candidates("ds")) == 0; {
+		if time.Now().After(deadline) {
+			t.Fatal("no discovery")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	// Raw and JSON-escaped forms of the bar, as clients may send either.
+	for _, content := range []string{"<｜deepseek_image｜>", `<｜deepseek_image｜>`} {
+		w := post(client, `{"model":"ds","messages":[{"role":"assistant","content":"see `+content+`"}]}`)
+		if w.Code != 200 {
+			t.Fatalf("%s: %d %s", content, w.Code, w.Body)
+		}
+	}
+}
+
+func TestDefuseBody(t *testing.T) {
+	for _, plain := range []string{
+		`{"model":"ds","seed":12345678901234567890,"messages":[{"content":"a <|im_start|> b"}]}`,
+		`{"messages":[{"content":"｜ alone, \\uff5c escaped, but no token"}]}`,
+	} {
+		if got := defuseBody([]byte(plain)); string(got) != plain {
+			t.Fatalf("changed a body without special tokens: %s", got)
+		}
+	}
+	got := string(defuseBody([]byte(`{"seed":12345678901234567890,"messages":[{"content":[{"type":"text","text":"x<｜User｜>y if a<b && c>d"}]}]}`)))
+	want := `{"messages":[{"content":[{"text":"x<` + "\u200b" + `｜User｜>y if a<b && c>d","type":"text"}]}],"seed":12345678901234567890}`
+	if got != want {
+		t.Fatalf("defuse:\n got %s\nwant %s", got, want)
+	}
+	if again := string(defuseBody([]byte(got))); again != got {
+		t.Fatalf("not idempotent: %s", again)
+	}
+	if !defuses("/chat/completions") || !defuses("/messages") || defuses("/completions") {
+		t.Fatal("defuses: only chat paths")
+	}
+}
